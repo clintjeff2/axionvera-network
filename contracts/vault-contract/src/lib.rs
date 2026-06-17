@@ -25,6 +25,8 @@ impl VaultContract {
         deposit_token: Address,
         reward_token: Address,
         vesting_period: u64,
+        target_deposits: i128,
+        utilization_multipliers: soroban_sdk::Vec<storage::MultiplierPoint>,
     ) -> Result<(), VaultError> {
         storage::require_not_paused(&e)?;
         if storage::is_initialized(&e) {
@@ -32,10 +34,19 @@ impl VaultContract {
         }
 
         validate_distinct_token_addresses(&deposit_token, &reward_token)?;
-        
+        validate_utilization_multipliers(&utilization_multipliers)?;
+
         admin.require_auth();
 
-        storage::initialize_state(&e, &admin, &deposit_token, &reward_token, vesting_period);
+        storage::initialize_state(
+            &e,
+            &admin,
+            &deposit_token,
+            &reward_token,
+            vesting_period,
+            target_deposits,
+            &utilization_multipliers,
+        );
         events::emit_initialize(&e, admin, deposit_token, reward_token);
 
         Ok(())
@@ -273,6 +284,29 @@ impl VaultContract {
 
         Ok(())
     }
+
+    pub fn set_target_deposits(e: Env, new_target: i128) -> Result<(), VaultError> {
+        storage::require_initialized(&e)?;
+        let admin = storage::get_admin(&e)?;
+        admin.require_auth();
+
+        validate_positive_amount(new_target)?;
+        storage::set_target_deposits(&e, new_target);
+        Ok(())
+    }
+
+    pub fn set_utilization_multipliers(
+        e: Env,
+        multipliers: soroban_sdk::Vec<storage::MultiplierPoint>,
+    ) -> Result<(), VaultError> {
+        storage::require_initialized(&e)?;
+        let admin = storage::get_admin(&e)?;
+        admin.require_auth();
+
+        validate_utilization_multipliers(&multipliers)?;
+        storage::set_utilization_multipliers(&e, &multipliers);
+        Ok(())
+    }
 }
 
 fn validate_positive_amount(amount: i128) -> Result<(), VaultError> {
@@ -292,6 +326,25 @@ fn validate_distinct_token_addresses(
     if deposit_token == reward_token {
         return Err(ValidationError::InvalidTokenConfiguration.into());
     }
+    Ok(())
+}
+
+fn validate_utilization_multipliers(
+    multipliers: &soroban_sdk::Vec<storage::MultiplierPoint>,
+) -> Result<(), VaultError> {
+    if multipliers.is_empty() {
+        return Ok(()); // An empty list is valid, which causes rewards to default to 1.0x.
+    }
+
+    let mut last_util_bps = 0;
+    for point in multipliers.iter() {
+        if point.utilization_bps < last_util_bps {
+            // The list must be sorted by utilization_bps in ascending order.
+            return Err(ValidationError::InvalidUtilizationParameters.into());
+        }
+        last_util_bps = point.utilization_bps;
+    }
+
     Ok(())
 }
 

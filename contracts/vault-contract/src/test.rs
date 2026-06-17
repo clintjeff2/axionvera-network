@@ -24,9 +24,16 @@ fn test_initialization_is_one_time() {
     let reward_token = Address::generate(&e);
     let vesting_period = 86400u64; // 1 day
 
-    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+    client.initialize(
+        &admin,
+        &deposit_token,
+        &reward_token,
+        &vesting_period,
+        &0,
+        &soroban_sdk::Vec::new(&e),
+    );
 
-    let result = client.try_initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+    let result = client.try_initialize(&admin, &deposit_token, &reward_token, &vesting_period, &0, &soroban_sdk::Vec::new(&e));
 
     assert_eq!(result, Err(Ok(VaultError::AlreadyInitialized)));
 }
@@ -44,7 +51,7 @@ fn test_initialize_requires_admin_auth() {
     let reward_token = Address::generate(&e);
     let vesting_period = 86400u64;
 
-    let result = client.try_initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+    let result = client.try_initialize(&admin, &deposit_token, &reward_token, &vesting_period, &0, &soroban_sdk::Vec::new(&e));
 
     assert!(result.is_err());
 }
@@ -62,7 +69,7 @@ fn test_initialize_fails_with_same_tokens() {
     let token = Address::generate(&e);
     let vesting_period = 86400u64;
 
-    let result = client.try_initialize(&admin, &token, &token, &vesting_period);
+    let result = client.try_initialize(&admin, &token, &token, &vesting_period, &0, &soroban_sdk::Vec::new(&e));
 
     assert_eq!(result, Err(Ok(VaultError::InvalidTokenConfiguration)));
 }
@@ -81,7 +88,14 @@ fn test_vesting() {
     let reward_token = Address::generate(&e);
     let vesting_period = 86400u64; // 1 day in seconds
 
-    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+    client.initialize(
+        &admin,
+        &deposit_token,
+        &reward_token,
+        &vesting_period,
+        &0,
+        &soroban_sdk::Vec::new(&e),
+    );
 
     let user = Address::generate(&e);
 
@@ -159,7 +173,14 @@ mod lock_tests {
 
         let deposit_token = token::Client::new(e, &deposit_token_id);
 
-        client.initialize(&admin, &deposit_token_id, &reward_token_id, &0);
+        client.initialize(
+            &admin,
+            &deposit_token_id,
+            &reward_token_id,
+            &0,
+            &0,
+            &soroban_sdk::Vec::new(e),
+        );
 
         (client, admin, deposit_token_id, deposit_token)
     }
@@ -324,5 +345,94 @@ mod lock_tests {
         // This test would verify that only the admin can call `pause`, `unpause`, `upgrade` etc.
         // For brevity, we assume the `require_auth` mechanism tested elsewhere is sufficient.
         // A full production suite would have explicit tests for non-admin callers on each function.
+    }
+}
+
+#[cfg(test)]
+mod dynamic_reward_tests {
+    use super::*;
+    use crate::storage::MultiplierPoint;
+
+    fn setup_dynamic_test(e: &Env) -> (VaultClient, Address, token::Client) {
+        e.mock_all_auths();
+
+        let contract_id = e.register_contract(None, VaultContract {});
+        let client = VaultContractClient::new(e, &contract_id);
+
+        let admin = Address::generate(e);
+        let deposit_token_id = e.register_stellar_asset_contract(Address::generate(e));
+        let reward_token_id = e.register_stellar_asset_contract(Address::generate(e));
+
+        let deposit_token = token::Client::new(e, &deposit_token_id);
+        let reward_token = token::Client::new(e, &reward_token_id);
+        reward_token.mint(&admin, &1_000_000_000);
+
+        // Curve:
+        // - Up to 50% utilization: 1.5x multiplier
+        // - 50% to 100% utilization: 1.0x multiplier
+        // - Over 100% utilization: 0.75x multiplier
+        let mut multipliers = soroban_sdk::Vec::new(e);
+        multipliers.push_back(MultiplierPoint { utilization_bps: 5000, multiplier_bps: 15000 });
+        multipliers.push_back(MultiplierPoint { utilization_bps: 10000, multiplier_bps: 10000 });
+        multipliers.push_back(MultiplierPoint { utilization_bps: u32::MAX, multiplier_bps: 7500 });
+
+        client.initialize(
+            &admin,
+            &deposit_token_id,
+            &reward_token_id,
+            &0,
+            &1_000_000, // Target deposits
+            &multipliers,
+        );
+
+        (client, admin, deposit_token)
+    }
+
+    #[test]
+    fn test_rewards_boosted_when_underutilized() {
+        let e = Env::default();
+        let (client, _admin, deposit_token) = setup_dynamic_test(&e);
+        let user = Address::generate(&e);
+
+        // Utilization is 25% (250_000 / 1_000_000) -> should use 1.5x multiplier
+        deposit_token.mint(&user, &250_000);
+        client.deposit(&user, &250_000);
+
+        client.distribute_rewards(&100_000); // Effective rewards = 150_000
+
+        let rewards = client.pending_rewards(&user);
+        assert_eq!(rewards, 150_000);
+    }
+
+    #[test]
+    fn test_rewards_normal_at_target_utilization() {
+        let e = Env::default();
+        let (client, _admin, deposit_token) = setup_dynamic_test(&e);
+        let user = Address::generate(&e);
+
+        // Utilization is 75% (750_000 / 1_000_000) -> should use 1.0x multiplier
+        deposit_token.mint(&user, &750_000);
+        client.deposit(&user, &750_000);
+
+        client.distribute_rewards(&100_000); // Effective rewards = 100_000
+
+        let rewards = client.pending_rewards(&user);
+        assert_eq!(rewards, 100_000);
+    }
+
+    #[test]
+    fn test_rewards_reduced_when_overutilized() {
+        let e = Env::default();
+        let (client, _admin, deposit_token) = setup_dynamic_test(&e);
+        let user = Address::generate(&e);
+
+        // Utilization is 150% (1_500_000 / 1_000_000) -> should use 0.75x multiplier
+        deposit_token.mint(&user, &1_500_000);
+        client.deposit(&user, &1_500_000);
+
+        client.distribute_rewards(&100_000); // Effective rewards = 75_000
+
+        let rewards = client.pending_rewards(&user);
+        assert_eq!(rewards, 75_000);
     }
 }

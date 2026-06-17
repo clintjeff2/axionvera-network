@@ -51,6 +51,8 @@ pub enum ValidationError {
     InsufficientRewardAmount,
     /// Thrown when a lock duration is zero.
     InvalidLockDuration,
+    /// Thrown when utilization parameters are invalid (e.g., not sorted).
+    InvalidUtilizationParameters,
 }
 
 /// Specific errors related to balance checks.
@@ -142,6 +144,8 @@ pub enum VaultError {
     UpgradeFailed = 20,
     /// The operation would exceed the per-transaction budget limit
     OperationLimitExceeded = 21,
+    /// Utilization parameters are invalid (e.g., not sorted)
+    InvalidUtilizationParameters = 22,
 }
 
 impl VaultError {
@@ -231,6 +235,10 @@ impl VaultError {
                 category: ErrorCategory::State,
                 message: "operation would exceed the per-transaction budget limit",
             },
+            Self::InvalidUtilizationParameters => ErrorInfo {
+                category: ErrorCategory::Validation,
+                message: "utilization parameters are invalid (e.g., not sorted)",
+            },
         }
     }
 
@@ -276,6 +284,7 @@ impl From<ValidationError> for VaultError {
             ValidationError::InvalidTokenConfiguration => Self::InvalidTokenConfiguration,
             ValidationError::InsufficientRewardAmount => Self::InsufficientRewardAmount,
             ValidationError::InvalidLockDuration => Self::InvalidLockDuration,
+            ValidationError::InvalidUtilizationParameters => Self::InvalidUtilizationParameters,
         }
     }
 }

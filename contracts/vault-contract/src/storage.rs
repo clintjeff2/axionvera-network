@@ -31,6 +31,10 @@ pub enum DataKey {
     RewardIndex,
     /// Vesting period in seconds
     VestingPeriod,
+    /// Target deposit amount for utilization calculation
+    TargetDeposits,
+    /// Multiplier points for dynamic reward calculation
+    UtilizationMultipliers,
     /// Reentrancy guard flag
     ReentrancyGuard,
     /// Pause flag
@@ -57,6 +61,14 @@ pub struct Lock {
     pub reward_multiplier: u32,
 }
 
+/// A point on the utilization-to-reward-multiplier curve.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultiplierPoint {
+    pub utilization_bps: u32, // Utilization in basis points (e.g., 5000 for 50%)
+    pub multiplier_bps: u32,  // Reward multiplier in basis points (e.g., 10000 for 1.0x)
+}
+
 /// The global state of the vault contract.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -73,6 +85,10 @@ pub struct VaultState {
     pub reward_index: i128,
     /// The vesting period in seconds.
     pub vesting_period: u64,
+    /// The target deposit amount for calculating utilization.
+    pub target_deposits: i128,
+    /// A list of points defining the utilization-to-reward multiplier curve.
+    pub utilization_multipliers: soroban_sdk::Vec<MultiplierPoint>,
 }
 
 /// Snapshot of a user's position in the vault.
@@ -133,6 +149,8 @@ pub fn initialize_state(
     deposit_token: &Address,
     reward_token: &Address,
     vesting_period: u64,
+    target_deposits: i128,
+    utilization_multipliers: &soroban_sdk::Vec<MultiplierPoint>,
 ) {
     e.storage().instance().set(&DataKey::Initialized, &true);
     e.storage().instance().set(&DataKey::Admin, admin);
@@ -142,6 +160,12 @@ pub fn initialize_state(
     e.storage().instance().set(&DataKey::VestingPeriod, &vesting_period);
     e.storage().instance().set(&DataKey::TotalDeposits, &0_i128);
     e.storage().instance().set(&DataKey::RewardIndex, &0_i128);
+    e.storage()
+        .instance()
+        .set(&DataKey::TargetDeposits, &target_deposits);
+    e.storage()
+        .instance()
+        .set(&DataKey::UtilizationMultipliers, utilization_multipliers);
     e.storage().instance().set(&DataKey::ReentrancyGuard, &false);
     e.storage().instance().set(&DataKey::IsPaused, &false);
     bump_instance_ttl(e);
@@ -183,6 +207,16 @@ pub fn get_state(e: &Env) -> Result<VaultState, VaultError> {
         .instance()
         .get(&DataKey::VestingPeriod)
         .unwrap_or(0_u64);
+    let target_deposits = e
+        .storage()
+        .instance()
+        .get(&DataKey::TargetDeposits)
+        .unwrap_or(0_i128);
+    let utilization_multipliers = e
+        .storage()
+        .instance()
+        .get(&DataKey::UtilizationMultipliers)
+        .unwrap_or_else(|| soroban_sdk::Vec::new(e));
     bump_instance_ttl(e);
     Ok(VaultState {
         admin,
@@ -191,6 +225,8 @@ pub fn get_state(e: &Env) -> Result<VaultState, VaultError> {
         total_deposits,
         reward_index,
         vesting_period,
+        target_deposits,
+        utilization_multipliers,
     })
 }
 
@@ -252,6 +288,20 @@ pub fn get_vesting_period(e: &Env) -> Result<u64, VaultError> {
 
 pub fn set_paused(e: &Env, paused: bool) {
     e.storage().instance().set(&DataKey::IsPaused, &paused);
+    bump_instance_ttl(e);
+}
+
+pub fn set_target_deposits(e: &Env, new_target: i128) {
+    e.storage()
+        .instance()
+        .set(&DataKey::TargetDeposits, &new_target);
+    bump_instance_ttl(e);
+}
+
+pub fn set_utilization_multipliers(e: &Env, multipliers: &soroban_sdk::Vec<MultiplierPoint>) {
+    e.storage()
+        .instance()
+        .set(&DataKey::UtilizationMultipliers, multipliers);
     bump_instance_ttl(e);
 }
 
@@ -599,7 +649,21 @@ pub fn unlock_expired_locks(e: &Env, user: &Address, limit: u32) -> Result<i128,
 
 pub fn store_reward_distribution(e: &Env, amount: i128) -> Result<VaultState, VaultError> {
     let state = get_state(e)?;
-    let increment = checked_reward_index_increment(amount, state.total_deposits)?;
+
+    let multiplier_bps = calculate_utilization_multiplier(
+        state.total_deposits,
+        state.target_deposits,
+        &state.utilization_multipliers,
+    )?;
+
+    // Apply the multiplier to the distributed amount.
+    let effective_amount = (amount as u128)
+        .checked_mul(multiplier_bps as u128)
+        .ok_or(ArithmeticError::Overflow)?
+        .checked_div(10000) // Convert from basis points
+        .ok_or(ArithmeticError::RewardCalculationFailed)? as i128;
+
+    let increment = checked_reward_index_increment(effective_amount, state.total_deposits)?;
 
     let next_reward_index = state
         .reward_index
@@ -734,6 +798,36 @@ pub(crate) fn checked_accrued_rewards(balance: i128, delta: i128) -> Result<i128
         .ok_or(ArithmeticError::Overflow)?
         .checked_div(REWARD_INDEX_SCALE)
         .ok_or(ArithmeticError::RewardCalculationFailed.into())
+}
+
+fn calculate_utilization_multiplier(
+    total_deposits: i128,
+    target_deposits: i128,
+    multipliers: &soroban_sdk::Vec<MultiplierPoint>,
+) -> Result<u32, VaultError> {
+    // If no target is set or no multipliers are defined, default to 1.0x.
+    if target_deposits <= 0 || multipliers.is_empty() {
+        return Ok(10000);
+    }
+
+    let utilization_bps = total_deposits
+        .checked_mul(10000)
+        .ok_or(ArithmeticError::Overflow)?
+        .checked_div(target_deposits)
+        .ok_or(ArithmeticError::RewardCalculationFailed)? as u32;
+
+    // The multiplier curve is defined by points. Find the first point that
+    // the current utilization is less than or equal to.
+    // The list of points is expected to be sorted by `utilization_bps`.
+    let mut selected_multiplier = multipliers.last().unwrap().multiplier_bps;
+    for point in multipliers.iter() {
+        if utilization_bps <= point.utilization_bps {
+            selected_multiplier = point.multiplier_bps;
+            break;
+        }
+    }
+
+    Ok(selected_multiplier)
 }
 
 fn accrue_position_rewards(
