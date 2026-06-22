@@ -157,282 +157,321 @@ fn test_vesting() {
     assert_eq!(claimed, 200000);
 }
 
-#[cfg(test)]
-mod lock_tests {
-    use super::*;
+// ---------------------------------------------------------------------------
+// Multi-Asset Tests
+// ---------------------------------------------------------------------------
 
-    fn setup_test(e: &Env) -> (VaultClient, Address, Address, token::Client) {
-        e.mock_all_auths();
+/// Tests adding a new asset to the vault.
+#[test]
+fn test_add_asset() {
+    let e = Env::default();
+    e.mock_all_auths();
 
-        let contract_id = e.register_contract(None, VaultContract {});
-        let client = VaultContractClient::new(e, &contract_id);
+    let contract_id = e.register_contract(None, VaultContract);
+    let client = VaultContractClient::new(&e, &contract_id);
 
-        let admin = Address::generate(e);
-        let deposit_token_id = e.register_stellar_asset_contract(Address::generate(e));
-        let reward_token_id = e.register_stellar_asset_contract(Address::generate(e));
+    let admin = Address::generate(&e);
+    let deposit_token = Address::generate(&e);
+    let reward_token = Address::generate(&e);
+    let vesting_period = 86400u64;
 
-        let deposit_token = token::Client::new(e, &deposit_token_id);
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
 
-        client.initialize(
-            &admin,
-            &deposit_token_id,
-            &reward_token_id,
-            &0,
-            &0,
-            &soroban_sdk::Vec::new(e),
-        );
-
-        (client, admin, deposit_token_id, deposit_token)
-    }
-
-    #[test]
-    fn test_lock_and_early_withdraw_fails() {
-        let e = Env::default();
-        let (client, _admin, _deposit_token_id, deposit_token) = setup_test(&e);
-        let user = Address::generate(&e);
-
-        deposit_token.mint(&user, &1000);
-        client.deposit(&user, &1000);
-
-        assert_eq!(client.liquid_balance(&user), 1000);
-        assert_eq!(client.locked_balance(&user), 0);
-        assert_eq!(client.balance(&user), 1000);
-
-        // Lock 600 tokens for 1 day
-        let lock_duration = 86400;
-        client.lock(&user, &600, &lock_duration);
-
-        assert_eq!(client.liquid_balance(&user), 400);
-        assert_eq!(client.locked_balance(&user), 600);
-        assert_eq!(client.balance(&user), 1000);
-
-        // Attempt to withdraw more than liquid balance fails
-        let res = client.try_withdraw(&user, &500);
-        assert_eq!(res, Err(Ok(VaultError::InsufficientBalance)));
-
-        // Withdraw liquid balance successfully
-        client.withdraw(&user, &400);
-        assert_eq!(client.liquid_balance(&user), 0);
-        assert_eq!(client.locked_balance(&user), 600);
-        assert_eq!(client.balance(&user), 600);
-    }
-
-    #[test]
-    fn test_unlock_after_expiry() {
-        let e = Env::default();
-        let (client, _admin, _deposit_token_id, deposit_token) = setup_test(&e);
-        let user = Address::generate(&e);
-
-        deposit_token.mint(&user, &1000);
-        client.deposit(&user, &1000);
-
-        let lock_duration = 100;
-        e.ledger().set(LedgerInfo {
-            timestamp: 1000,
-            ..e.ledger().get()
-        });
-        client.lock(&user, &600, &lock_duration);
-
-        assert_eq!(client.liquid_balance(&user), 400);
-        assert_eq!(client.locked_balance(&user), 600);
-
-        // Advance time just before expiry
-        e.ledger().set(LedgerInfo {
-            timestamp: 1000 + lock_duration - 1,
-            ..e.ledger().get()
-        });
-
-        // Manual unlock should do nothing
-        let unlocked = client.unlock_expired(&user, &50);
-        assert_eq!(unlocked, 0);
-        assert_eq!(client.liquid_balance(&user), 400);
-
-        // Advance time past expiry
-        e.ledger().set(LedgerInfo {
-            timestamp: 1000 + lock_duration + 1,
-            ..e.ledger().get()
-        });
-
-        // Manual unlock now works
-        let unlocked = client.unlock_expired(&user, &50);
-        assert_eq!(unlocked, 600);
-
-        assert_eq!(client.liquid_balance(&user), 1000);
-        assert_eq!(client.locked_balance(&user), 0);
-        assert_eq!(client.balance(&user), 1000);
-
-        // Now withdrawal succeeds
-        client.withdraw(&user, &1000);
-        assert_eq!(client.balance(&user), 0);
-    }
-
-    #[test]
-    fn test_withdraw_auto_unlocks_expired_locks() {
-        let e = Env::default();
-        let (client, _admin, _deposit_token_id, deposit_token) = setup_test(&e);
-        let user = Address::generate(&e);
-
-        deposit_token.mint(&user, &1000);
-        client.deposit(&user, &1000);
-
-        let lock_duration = 100;
-        e.ledger().set(LedgerInfo { timestamp: 1000, ..e.ledger().get() });
-        client.lock(&user, &600, &lock_duration); // 400 liquid, 600 locked
-
-        // Advance time past expiry
-        e.ledger().set(LedgerInfo { timestamp: 1000 + lock_duration + 1, ..e.ledger().get() });
-
-        // Withdraw should now succeed because it auto-unlocks the 600 expired tokens,
-        // making the liquid balance 1000.
-        client.withdraw(&user, &1000);
-        assert_eq!(client.balance(&user), 0);
-        assert_eq!(client.liquid_balance(&user), 0);
-    }
-
-    #[test]
-    fn test_unlock_limit_prevents_dos() {
-        let e = Env::default();
-        let (client, _admin, _deposit_token_id, deposit_token) = setup_test(&e);
-        let user = Address::generate(&e);
-
-        deposit_token.mint(&user, &1000);
-        client.deposit(&user, &1000);
-
-        e.ledger().set(LedgerInfo {
-            timestamp: 1000,
-            ..e.ledger().get()
-        });
-
-        // Create 12 small locks, all expiring at the same time
-        for _ in 0..12 {
-            client.lock(&user, &50, &100); // 12 * 50 = 600 locked
-        }
-
-        assert_eq!(client.liquid_balance(&user), 400);
-        assert_eq!(client.locked_balance(&user), 600);
-
-        // Advance time past expiry
-        e.ledger().set(LedgerInfo {
-            timestamp: 1000 + 101,
-            ..e.ledger().get()
-        });
-
-        // Attempt to unlock more than the max limit fails
-        let res = client.try_unlock_expired(&user, &51);
-        assert_eq!(res, Err(Ok(VaultError::OperationLimitExceeded)));
-
-        // First batch of unlocks (e.g., client requests to unlock 10)
-        // This will process 10 locks of 50 = 500
-        let unlocked1 = client.unlock_expired(&user, &10);
-        assert_eq!(unlocked1, 500);
-        assert_eq!(client.liquid_balance(&user), 900); // 400 + 500
-        assert_eq!(client.locked_balance(&user), 100); // 2 locks remaining
-
-        // Second batch of unlocks
-        // This will process the remaining 2 locks of 50 = 100
-        let unlocked2 = client.unlock_expired(&user, &10);
-        assert_eq!(unlocked2, 100);
-        assert_eq!(client.liquid_balance(&user), 1000); // 900 + 100
-        assert_eq!(client.locked_balance(&user), 0);
-
-        // Third call does nothing
-        let unlocked3 = client.unlock_expired(&user, &10);
-        assert_eq!(unlocked3, 0);
-    }
-
-    #[test]
-    fn test_admin_functions_auth() {
-        // This test would verify that only the admin can call `pause`, `unpause`, `upgrade` etc.
-        // For brevity, we assume the `require_auth` mechanism tested elsewhere is sufficient.
-        // A full production suite would have explicit tests for non-admin callers on each function.
-    }
+    let new_asset = Address::generate(&e);
+    
+    // Add asset
+    client.add_asset(&admin, &new_asset);
+    
+    // Verify asset is supported
+    assert!(client.is_asset_supported(&new_asset));
 }
 
-#[cfg(test)]
-mod dynamic_reward_tests {
-    use super::*;
-    use crate::storage::MultiplierPoint;
+/// Tests depositing multiple assets.
+#[test]
+fn test_multiple_asset_deposits() {
+    let e = Env::default();
+    e.mock_all_auths();
 
-    fn setup_dynamic_test(e: &Env) -> (VaultClient, Address, token::Client) {
-        e.mock_all_auths();
+    let contract_id = e.register_contract(None, VaultContract);
+    let client = VaultContractClient::new(&e, &contract_id);
 
-        let contract_id = e.register_contract(None, VaultContract {});
-        let client = VaultContractClient::new(e, &contract_id);
+    let admin = Address::generate(&e);
+    let deposit_token = Address::generate(&e);
+    let reward_token = Address::generate(&e);
+    let vesting_period = 86400u64;
 
-        let admin = Address::generate(e);
-        let deposit_token_id = e.register_stellar_asset_contract(Address::generate(e));
-        let reward_token_id = e.register_stellar_asset_contract(Address::generate(e));
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
 
-        let deposit_token = token::Client::new(e, &deposit_token_id);
-        let reward_token = token::Client::new(e, &reward_token_id);
-        reward_token.mint(&admin, &1_000_000_000);
+    let asset1 = Address::generate(&e);
+    let asset2 = Address::generate(&e);
+    let user = Address::generate(&e);
 
-        // Curve:
-        // - Up to 50% utilization: 1.5x multiplier
-        // - 50% to 100% utilization: 1.0x multiplier
-        // - Over 100% utilization: 0.75x multiplier
-        let mut multipliers = soroban_sdk::Vec::new(e);
-        multipliers.push_back(MultiplierPoint { utilization_bps: 5000, multiplier_bps: 15000 });
-        multipliers.push_back(MultiplierPoint { utilization_bps: 10000, multiplier_bps: 10000 });
-        multipliers.push_back(MultiplierPoint { utilization_bps: u32::MAX, multiplier_bps: 7500 });
+    // Add assets
+    client.add_asset(&admin, &asset1);
+    client.add_asset(&admin, &asset2);
 
-        client.initialize(
-            &admin,
-            &deposit_token_id,
-            &reward_token_id,
-            &0,
-            &1_000_000, // Target deposits
-            &multipliers,
-        );
+    // Mock token balances
+    e.as_contract(&asset1, || {
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(user.clone()), &1000i128);
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+    });
+    e.as_contract(&asset2, || {
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(user.clone()), &2000i128);
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+    });
 
-        (client, admin, deposit_token)
-    }
+    // Deposit asset1
+    client.deposit_asset(&user, &asset1, &100i128);
+    
+    // Deposit asset2
+    client.deposit_asset(&user, &asset2, &200i128);
 
-    #[test]
-    fn test_rewards_boosted_when_underutilized() {
-        let e = Env::default();
-        let (client, _admin, deposit_token) = setup_dynamic_test(&e);
-        let user = Address::generate(&e);
+    // Verify balances
+    assert_eq!(client.balance_of_asset(&user, &asset1), 100);
+    assert_eq!(client.balance_of_asset(&user, &asset2), 200);
+    
+    // Verify total deposits
+    assert_eq!(client.total_deposits_of_asset(&asset1), 100);
+    assert_eq!(client.total_deposits_of_asset(&asset2), 200);
+}
 
-        // Utilization is 25% (250_000 / 1_000_000) -> should use 1.5x multiplier
-        deposit_token.mint(&user, &250_000);
-        client.deposit(&user, &250_000);
+/// Tests withdrawing from multiple assets.
+#[test]
+fn test_multiple_asset_withdrawals() {
+    let e = Env::default();
+    e.mock_all_auths();
 
-        client.distribute_rewards(&100_000); // Effective rewards = 150_000
+    let contract_id = e.register_contract(None, VaultContract);
+    let client = VaultContractClient::new(&e, &contract_id);
 
-        let rewards = client.pending_rewards(&user);
-        assert_eq!(rewards, 150_000);
-    }
+    let admin = Address::generate(&e);
+    let deposit_token = Address::generate(&e);
+    let reward_token = Address::generate(&e);
+    let vesting_period = 86400u64;
 
-    #[test]
-    fn test_rewards_normal_at_target_utilization() {
-        let e = Env::default();
-        let (client, _admin, deposit_token) = setup_dynamic_test(&e);
-        let user = Address::generate(&e);
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
 
-        // Utilization is 75% (750_000 / 1_000_000) -> should use 1.0x multiplier
-        deposit_token.mint(&user, &750_000);
-        client.deposit(&user, &750_000);
+    let asset1 = Address::generate(&e);
+    let asset2 = Address::generate(&e);
+    let user = Address::generate(&e);
 
-        client.distribute_rewards(&100_000); // Effective rewards = 100_000
+    // Add assets
+    client.add_asset(&admin, &asset1);
+    client.add_asset(&admin, &asset2);
 
-        let rewards = client.pending_rewards(&user);
-        assert_eq!(rewards, 100_000);
-    }
+    // Mock token balances
+    e.as_contract(&asset1, || {
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(user.clone()), &1000i128);
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+    });
+    e.as_contract(&asset2, || {
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(user.clone()), &2000i128);
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+    });
 
-    #[test]
-    fn test_rewards_reduced_when_overutilized() {
-        let e = Env::default();
-        let (client, _admin, deposit_token) = setup_dynamic_test(&e);
-        let user = Address::generate(&e);
+    // Deposit assets
+    client.deposit_asset(&user, &asset1, &100i128);
+    client.deposit_asset(&user, &asset2, &200i128);
 
-        // Utilization is 150% (1_500_000 / 1_000_000) -> should use 0.75x multiplier
-        deposit_token.mint(&user, &1_500_000);
-        client.deposit(&user, &1_500_000);
+    // Withdraw from asset1
+    client.withdraw_asset(&user, &asset1, &50i128);
+    
+    // Withdraw from asset2
+    client.withdraw_asset(&user, &asset2, &100i128);
 
-        client.distribute_rewards(&100_000); // Effective rewards = 75_000
+    // Verify balances
+    assert_eq!(client.balance_of_asset(&user, &asset1), 50);
+    assert_eq!(client.balance_of_asset(&user, &asset2), 100);
+    
+    // Verify total deposits
+    assert_eq!(client.total_deposits_of_asset(&asset1), 50);
+    assert_eq!(client.total_deposits_of_asset(&asset2), 100);
+}
 
-        let rewards = client.pending_rewards(&user);
-        assert_eq!(rewards, 75_000);
-    }
+/// Tests reward distribution for a specific asset.
+#[test]
+fn test_asset_reward_distribution() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let contract_id = e.register_contract(None, VaultContract);
+    let client = VaultContractClient::new(&e, &contract_id);
+
+    let admin = Address::generate(&e);
+    let deposit_token = Address::generate(&e);
+    let reward_token = Address::generate(&e);
+    let vesting_period = 86400u64;
+
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+
+    let asset1 = Address::generate(&e);
+    let user1 = Address::generate(&e);
+    let user2 = Address::generate(&e);
+
+    // Add asset
+    client.add_asset(&admin, &asset1);
+
+    // Mock token balances
+    e.as_contract(&asset1, || {
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(user1.clone()), &1000i128);
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(user2.clone()), &2000i128);
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+    });
+    e.as_contract(&reward_token, || {
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(admin.clone()), &1000000i128);
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+    });
+
+    // Users deposit
+    client.deposit_asset(&user1, &asset1, &300i128);
+    client.deposit_asset(&user2, &asset1, &600i128);
+
+    // Set timestamp
+    e.ledger().set_timestamp(1000);
+
+    // Distribute rewards
+    client.distribute_rewards_for_asset(&admin, &asset1, &900000i128);
+
+    // Check pending rewards (user1 should get 1/3, user2 should get 2/3)
+    let pending1 = client.pending_rewards_for_asset(&user1, &asset1);
+    let pending2 = client.pending_rewards_for_asset(&user2, &asset1);
+    
+    assert_eq!(pending1, 300000);
+    assert_eq!(pending2, 600000);
+}
+
+/// Tests claiming rewards for a specific asset.
+#[test]
+fn test_asset_reward_claiming() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let contract_id = e.register_contract(None, VaultContract);
+    let client = VaultContractClient::new(&e, &contract_id);
+
+    let admin = Address::generate(&e);
+    let deposit_token = Address::generate(&e);
+    let reward_token = Address::generate(&e);
+    let vesting_period = 0u64; // No vesting for this test
+
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+
+    let asset1 = Address::generate(&e);
+    let user = Address::generate(&e);
+
+    // Add asset
+    client.add_asset(&admin, &asset1);
+
+    // Mock token balances
+    e.as_contract(&asset1, || {
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(user.clone()), &1000i128);
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+    });
+    e.as_contract(&reward_token, || {
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(admin.clone()), &1000000i128);
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+    });
+
+    // User deposits
+    client.deposit_asset(&user, &asset1, &100i128);
+
+    // Distribute rewards
+    client.distribute_rewards_for_asset(&admin, &asset1, &200000i128);
+
+    // Claim rewards
+    let claimed = client.claim_rewards_for_asset(&user, &asset1);
+    assert_eq!(claimed, 200000);
+
+    // Verify rewards were claimed
+    let pending = client.pending_rewards_for_asset(&user, &asset1);
+    assert_eq!(pending, 0);
+}
+
+/// Tests independent tracking of balances per asset.
+#[test]
+fn test_independent_asset_tracking() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let contract_id = e.register_contract(None, VaultContract);
+    let client = VaultContractClient::new(&e, &contract_id);
+
+    let admin = Address::generate(&e);
+    let deposit_token = Address::generate(&e);
+    let reward_token = Address::generate(&e);
+    let vesting_period = 0u64;
+
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+
+    let asset1 = Address::generate(&e);
+    let asset2 = Address::generate(&e);
+    let user = Address::generate(&e);
+
+    // Add assets
+    client.add_asset(&admin, &asset1);
+    client.add_asset(&admin, &asset2);
+
+    // Mock token balances
+    e.as_contract(&asset1, || {
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(user.clone()), &10000i128);
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+    });
+    e.as_contract(&asset2, || {
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(user.clone()), &10000i128);
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+    });
+    e.as_contract(&reward_token, || {
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(admin.clone()), &2000000i128);
+        e.storage().instance().set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+    });
+
+    // Deposit different amounts to each asset
+    client.deposit_asset(&user, &asset1, &100i128);
+    client.deposit_asset(&user, &asset2, &200i128);
+
+    // Distribute different reward amounts to each asset
+    client.distribute_rewards_for_asset(&admin, &asset1, &300000i128);
+    client.distribute_rewards_for_asset(&admin, &asset2, &600000i128);
+
+    // Check pending rewards are independent
+    let pending1 = client.pending_rewards_for_asset(&user, &asset1);
+    let pending2 = client.pending_rewards_for_asset(&user, &asset2);
+    
+    assert_eq!(pending1, 300000);
+    assert_eq!(pending2, 600000);
+
+    // Claim from asset1 only
+    let claimed1 = client.claim_rewards_for_asset(&user, &asset1);
+    assert_eq!(claimed1, 300000);
+
+    // Verify asset2 rewards are unchanged
+    let pending2_after = client.pending_rewards_for_asset(&user, &asset2);
+    assert_eq!(pending2_after, 600000);
+}
+
+/// Tests that unsupported asset operations fail.
+#[test]
+fn test_unsupported_asset_fails() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let contract_id = e.register_contract(None, VaultContract);
+    let client = VaultContractClient::new(&e, &contract_id);
+
+    let admin = Address::generate(&e);
+    let deposit_token = Address::generate(&e);
+    let reward_token = Address::generate(&e);
+    let vesting_period = 86400u64;
+
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+
+    let unsupported_asset = Address::generate(&e);
+    let user = Address::generate(&e);
+
+    // Try to deposit unsupported asset
+    let result = client.try_deposit_asset(&user, &unsupported_asset, &100i128);
+    assert!(result.is_err());
+
+    // Verify asset is not supported
+    assert!(!client.is_asset_supported(&unsupported_asset));
 }

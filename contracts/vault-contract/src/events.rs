@@ -11,6 +11,11 @@ const EVT_ADMIN_ACCEPTED: Symbol = symbol_short!("AdminAcpt");
 const ACT_LOCK: Symbol = symbol_short!("Lock");
 const ACT_UNLOCK: Symbol = symbol_short!("Unlock");
 const EVT_UPGRADE: Symbol = symbol_short!("Upgrade");
+const EVT_ASSET_ADDED: Symbol = symbol_short!("AssetAdd");
+const ACT_ASSET_DEPOSIT: Symbol = symbol_short!("AssetDep");
+const ACT_ASSET_WITHDRAW: Symbol = symbol_short!("AssetWith");
+const ACT_ASSET_DISTRIBUTE: Symbol = symbol_short!("AssetDist");
+const ACT_ASSET_CLAIM: Symbol = symbol_short!("AssetClm");
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -80,17 +85,44 @@ pub struct UpgradeEvent {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LockEvent {
-    pub user: Address,
-    pub amount: i128,
-    pub unlock_timestamp: u64,
+pub struct AssetAddedEvent {
+    pub asset: Address,
     pub timestamp: u64,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UnlockEvent {
+pub struct AssetDepositEvent {
     pub user: Address,
+    pub asset: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssetWithdrawEvent {
+    pub user: Address,
+    pub asset: Address,
+    pub amount: i128,
+    pub remaining_balance: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssetDistributeEvent {
+    pub caller: Address,
+    pub asset: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssetClaimEvent {
+    pub user: Address,
+    pub asset: Address,
     pub amount: i128,
     pub timestamp: u64,
 }
@@ -203,6 +235,65 @@ pub fn emit_upgrade(e: &Env, admin: Address, new_wasm_hash: BytesN<32>) {
         UpgradeEvent {
             admin,
             new_wasm_hash,
+            timestamp: e.ledger().timestamp(),
+        },
+    );
+}
+
+pub fn emit_asset_added(e: &Env, asset: Address) {
+    e.events().publish(
+        (EVT_ASSET_ADDED,),
+        AssetAddedEvent {
+            asset,
+            timestamp: e.ledger().timestamp(),
+        },
+    );
+}
+
+pub fn emit_asset_deposit(e: &Env, user: Address, asset: Address, amount: i128) {
+    e.events().publish(
+        (PROTOCOL, ACT_ASSET_DEPOSIT),
+        AssetDepositEvent {
+            user,
+            asset,
+            amount,
+            timestamp: e.ledger().timestamp(),
+        },
+    );
+}
+
+pub fn emit_asset_withdraw(e: &Env, user: Address, asset: Address, amount: i128, remaining_balance: i128) {
+    e.events().publish(
+        (PROTOCOL, ACT_ASSET_WITHDRAW),
+        AssetWithdrawEvent {
+            user,
+            asset,
+            amount,
+            remaining_balance,
+            timestamp: e.ledger().timestamp(),
+        },
+    );
+}
+
+pub fn emit_asset_distribute(e: &Env, caller: Address, asset: Address, amount: i128) {
+    e.events().publish(
+        (PROTOCOL, ACT_ASSET_DISTRIBUTE),
+        AssetDistributeEvent {
+            caller,
+            asset,
+            amount,
+            timestamp: e.ledger().timestamp(),
+        },
+    );
+}
+
+pub fn emit_asset_claim_rewards(e: &Env, user: Address, asset: Address, amount: i128) {
+    e.events().publish(
+        (PROTOCOL, ACT_ASSET_CLAIM),
+        AssetClaimEvent {
+            user,
+            asset,
+            amount,
             timestamp: e.ledger().timestamp(),
         },
     );
