@@ -2,11 +2,10 @@ use soroban_sdk::{Address, BytesN, Env};
 
 use axionvera_core;
 use axionvera_events::{
-    self,
-    AdminTransferAcceptedEvent, AdminTransferProposedEvent, AssetAddedEvent, AssetClaimEvent,
-    AssetDepositEvent, AssetDistributeEvent, AssetWithdrawEvent, ClaimEvent, DelegateEvent,
-    DelegatedActionEvent, DepositEvent, DistributeEvent, InitializeEvent, LockEvent, PauseEvent,
-    RevokeDelegationEvent, UnlockEvent, UnpauseEvent, UpgradeEvent, WithdrawEvent, EVENT_VERSION,
+    self, AdminTransferAcceptedEvent, AdminTransferProposedEvent, AssetAddedEvent, AssetClaimEvent,
+    AssetDepositEvent, AssetDistributeEvent, AssetWithdrawEvent, ClaimEvent, DepositEvent,
+    DistributeEvent, InitializeEvent, LockEvent, PauseEvent, UnlockEvent, UnpauseEvent,
+    UpgradeEvent, WithdrawEvent, EVENT_VERSION,
     PROTOCOL, ACT_ADMIN_ACCEPTED, ACT_ADMIN_PROPOSED, ACT_ASSET_ADDED, ACT_ASSET_CLAIM,
     ACT_ASSET_DEPOSIT, ACT_ASSET_DISTRIBUTE, ACT_ASSET_WITHDRAW, ACT_CLAIM, ACT_DELEGATE,
     ACT_DELEGATED_ACTION, ACT_DEPOSIT, ACT_DISTRIBUTE, ACT_INIT, ACT_LOCK, ACT_PAUSE,

@@ -76,10 +76,6 @@ pub enum DataKey {
     UserAccruedRewards(Address),
     /// User's last reward distribution timestamp (legacy, kept for backwards compatibility)
     UserLastRewardTimestamp(Address),
-    /// User's liquid balance (available for immediate withdrawal)
-    UserLiquidBalance(Address),
-    /// User's active lock entries
-    UserLocks(Address),
     /// Penalty rate in basis points for early withdrawals
     PenaltyRateBps,
     /// Total penalty amount collected by the vault
@@ -149,28 +145,6 @@ pub struct UserPosition {
     pub accrued_rewards: i128,
     /// The timestamp of the last reward distribution affecting this user.
     pub last_reward_timestamp: u64,
-}
-
-/// A single time-locked deposit entry.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Lock {
-    /// The amount locked in this entry.
-    pub amount: i128,
-    /// The earliest timestamp when these funds may be unlocked without penalty.
-    pub unlock_timestamp: u64,
-    /// A placeholder for future locked-reward multiplier support.
-    pub reward_multiplier: u32,
-}
-
-/// A reward multiplier entry used to compute dynamic reward curves.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MultiplierPoint {
-    /// Utilization threshold in basis points.
-    pub utilization_bps: u32,
-    /// Reward multiplier in basis points.
-    pub multiplier_bps: u32,
 }
 
 /// Snapshot of a user's position across multiple assets.

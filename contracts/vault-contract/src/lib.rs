@@ -2,10 +2,12 @@
 
 pub mod cross_contract;
 pub mod errors;
-mod events;
-mod storage;
+pub mod events;
+pub mod storage;
 #[cfg(test)]
 mod test;
+
+
 
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env};
 

@@ -29,7 +29,7 @@ pub const ACT_ASSET_WITHDRAW: Symbol = symbol_short!("asset_wd");
 pub const ACT_ASSET_DISTRIBUTE: Symbol = symbol_short!("ast_dist");
 pub const ACT_ASSET_CLAIM: Symbol = symbol_short!("asset_clm");
 pub const ACT_DELEGATE: Symbol = symbol_short!("delegate");
-pub const ACT_REVOKE_DELEGATION: Symbol = symbol_short!("revoke_dlg");
+pub const ACT_REVOKE_DELEGATION: Symbol = symbol_short!("rvk_dlg");
 pub const ACT_DELEGATED_ACTION: Symbol = symbol_short!("deleg_act");
 
 // ---------------------------------------------------------------------------
