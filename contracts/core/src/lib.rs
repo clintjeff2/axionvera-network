@@ -14,6 +14,7 @@ use axionvera_storage::{
     set_governance_state, set_reward_state, set_staking_state, set_treasury_state, set_vault_state,
     transition_resource as storage_transition_resource,
 };
+use axionvera_snapshots as snapshots;
 
 /// Maximum number of event log entries stored per user index.
 const MAX_EVENTS_PER_USER: u32 = 50;
@@ -201,51 +202,45 @@ pub fn current_governance_state(e: &Env, proposal_id: Symbol) -> GovernanceState
     get_governance_state(e, proposal_id)
 }
 
+#[contract]
+pub struct CoreContract;
+
+#[contractimpl]
+impl CoreContract {
+    /// Example of a critical function restricted by the emergency pause
+    pub fn critical_action(env: Env, security_contract: Address, /* other args */) {
+        // 1. Cross-contract call to check if paused
+        let is_paused: bool = env.invoke_contract(
+            &security_contract,
+            &soroban_sdk::Symbol::new(&env, "is_paused"),
+            soroban_sdk::vec![&env]
+        );
+        
+        assert!(!is_paused, "Emergency: Protocol is currently paused.");
+
+        // 2. Continue with normal critical action...
+    }
+}
 // ===========================================================================
-// RESOURCE LIFECYCLE FACADE
+// SNAPSHOT INTEGRATION
 // ===========================================================================
 
-/// Create a new protocol resource.
-pub fn create_resource(
-    e: &Env,
-    resource_id: Symbol,
-    caller: &Address,
-    metadata: Option<Bytes>,
-) -> Result<ResourceInfo, ResourceError> {
-    storage_create_resource(e, &resource_id, caller, metadata)
+/// Take a protocol snapshot.
+pub fn take_snapshot(e: &Env) -> Result<snapshots::ProtocolSnapshot, snapshots::SnapshotError> {
+    snapshots::take_snapshot(e, None)
 }
 
-/// Transition a resource to a new lifecycle state.
-pub fn transition_resource(
-    e: &Env,
-    resource_id: &Symbol,
-    next_state: ResourceState,
-    caller: &Address,
-) -> Result<ResourceInfo, ResourceError> {
-    storage_transition_resource(e, resource_id, next_state, caller)
+/// Get a protocol snapshot by ID.
+pub fn get_snapshot(e: &Env, id: u64) -> Option<snapshots::ProtocolSnapshot> {
+    snapshots::get_snapshot(e, id)
 }
 
-/// Get the current state of a resource.
-pub fn current_resource_state(e: &Env, resource_id: &Symbol) -> Result<ResourceState, ResourceError> {
-    axionvera_storage::get_resource_state(e, resource_id)
+/// Get the latest protocol snapshot.
+pub fn get_latest_snapshot(e: &Env) -> Option<snapshots::ProtocolSnapshot> {
+    snapshots::get_latest_snapshot(e)
 }
 
-/// Get the full info for a resource.
-pub fn get_resource_info(e: &Env, resource_id: &Symbol) -> Result<ResourceInfo, ResourceError> {
-    axionvera_storage::get_resource_info(e, resource_id)
-}
-
-/// List all resource IDs.
-pub fn list_resources(e: &Env) -> Vec<Symbol> {
-    storage_list_resources(e)
-}
-
-/// Check if a resource exists.
-pub fn resource_exists(e: &Env, resource_id: &Symbol) -> bool {
-    storage_resource_exists(e, resource_id)
-}
-
-/// Count registered resources.
-pub fn resource_count(e: &Env) -> u32 {
-    storage_resource_count(e)
+/// Get the protocol snapshot history.
+pub fn get_snapshot_history(e: &Env, limit: u32) -> Vec<snapshots::ProtocolSnapshot> {
+    snapshots::get_snapshot_history(e, limit)
 }
