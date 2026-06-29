@@ -1,8 +1,8 @@
 use soroban_sdk::{contracttype, Address, Env, Map};
 
 use crate::errors::{
-    ArithmeticError, AuthorizationError, BalanceError, DelegationError, StateError, ValidationError,
-    VaultError,
+    ArithmeticError, AuthorizationError, BalanceError, DelegationError, StateError,
+    ValidationError, VaultError,
 };
 
 pub const PRECISION_FACTOR: i128 = 1_000_000_000;
@@ -66,6 +66,10 @@ pub enum DataKey {
     IsPaused,
     /// User balance (legacy, kept for backwards compatibility)
     UserBalance(Address),
+    /// User liquid balance separated from locked funds
+    UserLiquidBalance(Address),
+    /// User lock entries
+    UserLocks(Address),
     /// User's last synced reward index (legacy, kept for backwards compatibility)
     UserRewardIndex(Address),
     /// User's accrued but unvested rewards (legacy, kept for backwards compatibility)
@@ -151,6 +155,17 @@ pub struct UserPosition {
 pub struct MultiAssetPosition {
     /// Map of asset address to user position
     pub positions: Map<Address, UserPosition>,
+}
+
+/// Legacy delegate authorization used by delegate-specific entrypoints.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DelegateAuthorization {
+    pub owner: Address,
+    pub delegate: Address,
+    pub permissions: u32,
+    pub created_at: u64,
+    pub active: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +294,21 @@ pub fn initialize_state(
         .instance()
         .set(&DataKey::ReentrancyGuard, &false);
     e.storage().instance().set(&DataKey::IsPaused, &false);
+
+    // Register the legacy deposit token as the first multi-asset vault asset so
+    // legacy and asset-scoped entrypoints share the same supported-asset registry.
+    let mut supported_assets = Map::new(e);
+    supported_assets.set(deposit_token.clone(), true);
+    e.storage()
+        .instance()
+        .set(&DataKey::SupportedAssets, &supported_assets);
+    e.storage()
+        .instance()
+        .set(&DataKey::AssetTotalDeposits(deposit_token.clone()), &0_i128);
+    e.storage()
+        .instance()
+        .set(&DataKey::AssetRewardIndex(deposit_token.clone()), &0_i128);
+
     bump_instance_ttl(e);
 }
 
@@ -483,7 +513,12 @@ pub fn get_penalty_rate_bps(e: &Env) -> Result<u32, VaultError> {
     Ok(rate)
 }
 
-pub fn authorize_delegate(e: &Env, owner: &Address, delegate: &Address, permissions: u32) -> Result<(), VaultError> {
+pub fn authorize_delegate(
+    e: &Env,
+    owner: &Address,
+    delegate: &Address,
+    permissions: u32,
+) -> Result<(), VaultError> {
     require_initialized(e)?;
     let record = DelegateAuthorization {
         owner: owner.clone(),
@@ -504,7 +539,11 @@ pub fn revoke_delegate(e: &Env, owner: &Address, delegate: &Address) -> Result<(
     Ok(())
 }
 
-pub fn get_delegate_permissions(e: &Env, owner: &Address, delegate: &Address) -> Result<u32, VaultError> {
+pub fn get_delegate_permissions(
+    e: &Env,
+    owner: &Address,
+    delegate: &Address,
+) -> Result<u32, VaultError> {
     require_initialized(e)?;
     let record = e
         .storage()
@@ -1757,8 +1796,7 @@ pub fn check_delegation_permission(
     operator: &Address,
     permission: u32,
 ) -> Result<(), VaultError> {
-    let delegation = get_delegation(e, delegator, operator)
-        .ok_or(DelegationError::NotFound)?;
+    let delegation = get_delegation(e, delegator, operator).ok_or(DelegationError::NotFound)?;
 
     // Check expiration.
     let current_ts = e.ledger().timestamp();
