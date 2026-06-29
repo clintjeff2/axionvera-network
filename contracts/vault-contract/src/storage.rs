@@ -64,10 +64,6 @@ pub enum DataKey {
     ReentrancyGuard,
     /// Pause flag
     IsPaused,
-    /// User liquid balance (unlocked deposits)
-    UserLiquidBalance(Address),
-    /// User lock entries
-    UserLocks(Address),
     /// User balance (legacy, kept for backwards compatibility)
     UserBalance(Address),
     /// User's last synced reward index (legacy, kept for backwards compatibility)
