@@ -257,3 +257,107 @@ pub trait PolicyEngine {
     /// Checks if the contract is paused.
     fn is_paused(e: Env) -> bool;
 }
+
+// ---------------------------------------------------------------------------
+// Event Replay Framework Types
+// ---------------------------------------------------------------------------
+
+/// The status of a replayed event.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReplayEventStatus {
+    /// Event is pending replay.
+    Pending,
+    /// Event was successfully replayed.
+    Success,
+    /// Event replay failed.
+    Failed,
+    /// Event was skipped (e.g., not applicable).
+    Skipped,
+}
+
+/// A single event in the replay log.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayEvent {
+    /// Unique identifier for this event in the replay log.
+    pub id: u64,
+    /// Protocol identifier (e.g., PROTOCOL, PROTOCOL_CONFIG).
+    pub protocol: Symbol,
+    /// Action symbol (e.g., ACT_INIT, ACT_DEPOSIT).
+    pub action: Symbol,
+    /// Timestamp of the original event.
+    pub timestamp: u64,
+    /// Raw event payload (encoded as Val).
+    pub payload: Val,
+    /// Status of this event in the replay.
+    pub status: ReplayEventStatus,
+    /// Error message if replay failed (empty if success).
+    pub error_message: Bytes,
+}
+
+/// Result of a full replay run.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayReport {
+    /// Unique identifier for this replay run.
+    pub run_id: BytesN<32>,
+    /// Total number of events processed.
+    pub total_events: u64,
+    /// Number of successful events.
+    pub successful_events: u64,
+    /// Number of failed events.
+    pub failed_events: u64,
+    /// Number of skipped events.
+    pub skipped_events: u64,
+    /// Timestamp when replay started.
+    pub started_at: u64,
+    /// Timestamp when replay ended.
+    pub ended_at: u64,
+    /// Whether the entire replay was considered successful.
+    pub success: bool,
+}
+
+/// Errors returned by replay engine operations.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum ReplayError {
+    AlreadyInitialized = 1,
+    NotInitialized = 2,
+    Unauthorized = 3,
+    EventAlreadyAdded = 4,
+    InvalidEvent = 5,
+    ReplayInProgress = 6,
+    ReplayFailed = 7,
+}
+
+/// Interface implemented by the event replay engine.
+pub trait EventReplayEngine {
+    /// Initializes the replay engine with an admin.
+    fn initialize(e: Env, admin: Address) -> Result<(), ReplayError>;
+    
+    /// Adds a historical event to the replay log.
+    fn add_event(
+        e: Env,
+        protocol: Symbol,
+        action: Symbol,
+        timestamp: u64,
+        payload: Val,
+    ) -> Result<u64, ReplayError>;
+    
+    /// Starts replaying events from the beginning or last checkpoint.
+    fn start_replay(e: Env) -> Result<ReplayReport, ReplayError>;
+    
+    /// Gets a replay event by ID.
+    fn get_event(e: Env, event_id: u64) -> Result<ReplayEvent, ReplayError>;
+    
+    /// Lists all replay events.
+    fn list_events(e: Env) -> Result<Vec<ReplayEvent>, ReplayError>;
+    
+    /// Gets a replay report by run ID.
+    fn get_report(e: Env, run_id: BytesN<32>) -> Result<ReplayReport, ReplayError>;
+    
+    /// Gets the current admin.
+    fn admin(e: Env) -> Result<Address, ReplayError>;
+}
