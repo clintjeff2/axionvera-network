@@ -878,6 +878,13 @@ name = "axionvera-auth"
 version = "0.1.0"
 
 [[package]]
+name = "axionvera-context"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "axionvera-core"
 version = "0.1.0"
 dependencies = [
