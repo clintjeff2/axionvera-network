@@ -124,3 +124,66 @@ pub trait TransactionOrchestrator {
     fn execute_plan(e: Env, plan: ExecutionPlan) -> Result<ExecutionReceipt, OrchestrationError>;
     fn execution_receipt(e: Env, plan_id: BytesN<32>) -> Option<ExecutionReceipt>;
 }
+
+/// Represents a call to a contract function in a pipeline stage.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PipelineAction {
+    pub target: Address,
+    pub function: Symbol,
+    pub args: Vec<Val>,
+}
+
+/// A stage in a protocol pipeline, containing validation, execution, and post-processing.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PipelineStage {
+    pub id: Symbol,
+    pub validation: Vec<PipelineAction>,
+    pub execution: PipelineAction,
+    pub post_hook: Vec<PipelineAction>,
+}
+
+/// A collection of stages to be executed in sequence.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PipelineDefinition {
+    pub id: Symbol,
+    pub stages: Vec<PipelineStage>,
+}
+
+/// Status of a pipeline or a specific stage.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PipelineStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Failed,
+}
+
+/// The result of a pipeline execution.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PipelineReceipt {
+    pub pipeline_id: Symbol,
+    pub status: PipelineStatus,
+    pub failed_stage: Option<Symbol>,
+    pub error_code: Option<u32>,
+}
+
+/// Errors returned by pipeline execution.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum PipelineError {
+    EmptyPipeline = 100,
+    StageValidationFailed = 101,
+    StageExecutionFailed = 102,
+    PostHookFailed = 103,
+}
+
+/// Interface implemented by contracts that execute protocol pipelines.
+pub trait PipelineRunner {
+    fn execute_pipeline(e: Env, pipeline: PipelineDefinition) -> Result<PipelineReceipt, PipelineError>;
+}
