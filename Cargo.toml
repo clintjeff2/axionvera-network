@@ -1,5 +1,4 @@
 [workspace]
-resolver = "2"
 members = [
   "contracts/auth",
   "contracts/vault-contract",
@@ -17,6 +16,11 @@ members = [
   "tests/security",
   "tests/risk",
 ]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
 
 [workspace.package]
 version = "0.1.0"
