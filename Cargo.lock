@@ -904,6 +904,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "axionvera-invariant-tests"
+version = "0.1.0"
+dependencies = [
+ "axionvera-accounting",
+ "axionvera-core",
+ "axionvera-state",
+ "axionvera-storage",
+ "axionvera-validator",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "axionvera-network-node"
 version = "0.1.0"
 dependencies = [
@@ -1030,6 +1042,19 @@ dependencies = [
  "axionvera-events",
  "axionvera-resources",
  "axionvera-state",
+ "soroban-sdk",
+]
+
+[[package]]
+name = "axionvera-validator"
+version = "0.1.0"
+dependencies = [
+ "axionvera-accounting",
+ "axionvera-core",
+ "axionvera-events",
+ "axionvera-resources",
+ "axionvera-state",
+ "axionvera-storage",
  "soroban-sdk",
 ]
 

@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contracttype, Address, Bytes, Env, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, Address, Bytes, Env, Symbol, Vec};
 
 use axionvera_resources::{
     emit_resource_created_event, emit_resource_retired_event, emit_resource_transition_event,
@@ -15,11 +15,11 @@ use axionvera_state::{
 // Event — module symbols for state machine events
 // ===========================================================================
 
-const MOD_VAULT: Symbol = Symbol::short!("vault");
-const MOD_STAKING: Symbol = Symbol::short!("staking");
-const MOD_REWARDS: Symbol = Symbol::short!("rewards");
-const MOD_TREASURY: Symbol = Symbol::short!("treasury");
-const MOD_GOV: Symbol = Symbol::short!("gov");
+const MOD_VAULT: Symbol = symbol_short!("vault");
+const MOD_STAKING: Symbol = symbol_short!("staking");
+const MOD_REWARDS: Symbol = symbol_short!("rewards");
+const MOD_TREASURY: Symbol = symbol_short!("treasury");
+const MOD_GOV: Symbol = symbol_short!("gov");
 
 // ===========================================================================
 // Storage Keys for Protocol State Machines
