@@ -435,7 +435,9 @@ impl VaultContract {
                 amt,
                 accounting::OperationResources::new(5, 3, 2, 1),
             )?;
-            events::emit_claim_rewards(&e, user, amt);
+            events::emit_claim_rewards(&e, user.clone(), amt);
+            let remaining = storage::pending_user_rewards_view(&e, &user)?;
+            events::emit_vesting_claimed(&e, user, None, amt, remaining);
             Ok(amt)
         })
     }
