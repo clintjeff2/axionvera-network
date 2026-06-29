@@ -131,10 +131,10 @@ impl VaultContract {
         access::require_actor(&from)?;
 
         with_non_reentrant(&e, || {
-            let state = storage::get_state(&e)?;
+            let deposit_token = storage::get_deposit_token(&e)?;
             CrossContractClient::token_transfer(
                 &e,
-                &state.deposit_token,
+                &deposit_token,
                 &from,
                 &e.current_contract_address(),
                 amount,
@@ -227,7 +227,7 @@ impl VaultContract {
 
             CrossContractClient::token_transfer(
                 &e,
-                &state.deposit_token,
+                &deposit_token,
                 &e.current_contract_address(),
                 &to,
                 amount,
@@ -279,9 +279,8 @@ impl VaultContract {
             return Err(ValidationError::InsufficientRewardAmount.into());
         }
 
-        let state = storage::get_state(&e)?;
-        let admin = state.admin.clone();
-        let reward_token_id = state.reward_token.clone();
+        let admin = storage::get_admin(&e)?;
+        let reward_token_id = storage::get_reward_token(&e)?;
 
         access::require_stored_admin(&admin)?;
 

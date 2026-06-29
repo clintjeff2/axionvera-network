@@ -4,9 +4,18 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, LedgerInfo},
-    token, Address, Env,
+    contracttype,
+    testutils::{Address as _, Events, Ledger, LedgerInfo},
+    token, xdr::ToXdr, Address, Env,
 };
+
+/// Minimal token DataKey for test storage mocking.
+/// The built-in Stellar Asset Contract uses these internal keys.
+#[contracttype]
+enum TokenDataKey {
+    Balance(Address),
+    Admin,
+}
 
 type VaultClient<'a> = VaultContractClient<'a>;
 
@@ -16,7 +25,7 @@ fn test_initialization_is_one_time() {
     let e = Env::default();
     e.mock_all_auths();
 
-    let contract_id = e.register_contract(None, VaultContract {});
+    let contract_id = e.register_contract(None, VaultContract);
     let client = VaultContractClient::new(&e, &contract_id);
 
     let admin = Address::generate(&e);
@@ -50,7 +59,7 @@ fn test_initialization_is_one_time() {
 fn test_initialize_requires_admin_auth() {
     let e = Env::default();
 
-    let contract_id = e.register_contract(None, VaultContract {});
+    let contract_id = e.register_contract(None, VaultContract);
     let client = VaultContractClient::new(&e, &contract_id);
 
     let admin = Address::generate(&e);
@@ -76,7 +85,7 @@ fn test_initialize_fails_with_same_tokens() {
     let e = Env::default();
     e.mock_all_auths();
 
-    let contract_id = e.register_contract(None, VaultContract {});
+    let contract_id = e.register_contract(None, VaultContract);
     let client = VaultContractClient::new(&e, &contract_id);
 
     let admin = Address::generate(&e);
@@ -101,7 +110,7 @@ fn test_vesting() {
     let e = Env::default();
     e.mock_all_auths();
 
-    let contract_id = e.register_contract(None, VaultContract {});
+    let contract_id = e.register_contract(None, VaultContract);
     let client = VaultContractClient::new(&e, &contract_id);
 
     let admin = Address::generate(&e);
@@ -126,22 +135,22 @@ fn test_vesting() {
 
     // Mock token balances
     e.as_contract(&deposit_token, || {
-        e.storage().instance().set(&token::DataKey::Admin, &admin);
+        e.storage().instance().set(&TokenDataKey::Admin, &admin);
         e.storage()
             .instance()
-            .set(&token::DataKey::Balance(user.clone()), &1000i128);
+            .set(&TokenDataKey::Balance(user.clone()), &1000i128);
         e.storage()
             .instance()
-            .set(&token::DataKey::Balance(contract_id.clone()), &0i128);
+            .set(&TokenDataKey::Balance(contract_id.clone()), &0i128);
     });
     e.as_contract(&reward_token, || {
-        e.storage().instance().set(&token::DataKey::Admin, &admin);
+        e.storage().instance().set(&TokenDataKey::Admin, &admin);
         e.storage()
             .instance()
-            .set(&token::DataKey::Balance(admin.clone()), &200000i128);
+            .set(&TokenDataKey::Balance(admin.clone()), &200000i128);
         e.storage()
             .instance()
-            .set(&token::DataKey::Balance(contract_id.clone()), &0i128);
+            .set(&TokenDataKey::Balance(contract_id.clone()), &0i128);
     });
 
     // User deposits tokens
@@ -186,7 +195,7 @@ fn test_penalty_rate_and_early_locked_withdrawal() {
     let e = Env::default();
     e.mock_all_auths();
 
-    let contract_id = e.register_contract(None, VaultContract {});
+    let contract_id = e.register_contract(None, VaultContract);
     let client = VaultContractClient::new(&e, &contract_id);
 
     let admin = Address::generate(&e);
@@ -206,13 +215,13 @@ fn test_penalty_rate_and_early_locked_withdrawal() {
 
     // Set up mock token balances for deposit token contract.
     e.as_contract(&deposit_token, || {
-        e.storage().instance().set(&token::DataKey::Admin, &admin);
+        e.storage().instance().set(&TokenDataKey::Admin, &admin);
         e.storage()
             .instance()
-            .set(&token::DataKey::Balance(user.clone()), &1000i128);
+            .set(&TokenDataKey::Balance(user.clone()), &1000i128);
         e.storage()
             .instance()
-            .set(&token::DataKey::Balance(contract_id.clone()), &0i128);
+            .set(&TokenDataKey::Balance(contract_id.clone()), &0i128);
     });
 
     // User deposits 100 tokens
@@ -244,7 +253,7 @@ fn test_set_penalty_rate_rejected_when_above_max() {
     let e = Env::default();
     e.mock_all_auths();
 
-    let contract_id = e.register_contract(None, VaultContract {});
+    let contract_id = e.register_contract(None, VaultContract);
     let client = VaultContractClient::new(&e, &contract_id);
 
     let admin = Address::generate(&e);
@@ -327,7 +336,7 @@ fn test_add_asset() {
     let reward_token = Address::generate(&e);
     let vesting_period = 86400u64;
 
-    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period, &0, &soroban_sdk::Vec::new(&e));
 
     let new_asset = Address::generate(&e);
 
@@ -352,7 +361,7 @@ fn test_multiple_asset_deposits() {
     let reward_token = Address::generate(&e);
     let vesting_period = 86400u64;
 
-    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period, &0, &soroban_sdk::Vec::new(&e));
 
     let asset1 = Address::generate(&e);
     let asset2 = Address::generate(&e);
@@ -365,21 +374,21 @@ fn test_multiple_asset_deposits() {
     // Mock token balances
     e.as_contract(&asset1, || {
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(user.clone()),
+            &TokenDataKey::Balance(user.clone()),
             &1000i128,
         );
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(contract_id.clone()),
+            &TokenDataKey::Balance(contract_id.clone()),
             &0i128,
         );
     });
     e.as_contract(&asset2, || {
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(user.clone()),
+            &TokenDataKey::Balance(user.clone()),
             &2000i128,
         );
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(contract_id.clone()),
+            &TokenDataKey::Balance(contract_id.clone()),
             &0i128,
         );
     });
@@ -413,7 +422,7 @@ fn test_multiple_asset_withdrawals() {
     let reward_token = Address::generate(&e);
     let vesting_period = 86400u64;
 
-    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period, &0, &soroban_sdk::Vec::new(&e));
 
     let asset1 = Address::generate(&e);
     let asset2 = Address::generate(&e);
@@ -426,21 +435,21 @@ fn test_multiple_asset_withdrawals() {
     // Mock token balances
     e.as_contract(&asset1, || {
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(user.clone()),
+            &TokenDataKey::Balance(user.clone()),
             &1000i128,
         );
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(contract_id.clone()),
+            &TokenDataKey::Balance(contract_id.clone()),
             &0i128,
         );
     });
     e.as_contract(&asset2, || {
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(user.clone()),
+            &TokenDataKey::Balance(user.clone()),
             &2000i128,
         );
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(contract_id.clone()),
+            &TokenDataKey::Balance(contract_id.clone()),
             &0i128,
         );
     });
@@ -478,7 +487,7 @@ fn test_asset_reward_distribution() {
     let reward_token = Address::generate(&e);
     let vesting_period = 86400u64;
 
-    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period, &0, &soroban_sdk::Vec::new(&e));
 
     let asset1 = Address::generate(&e);
     let user1 = Address::generate(&e);
@@ -490,25 +499,25 @@ fn test_asset_reward_distribution() {
     // Mock token balances
     e.as_contract(&asset1, || {
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(user1.clone()),
+            &TokenDataKey::Balance(user1.clone()),
             &1000i128,
         );
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(user2.clone()),
+            &TokenDataKey::Balance(user2.clone()),
             &2000i128,
         );
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(contract_id.clone()),
+            &TokenDataKey::Balance(contract_id.clone()),
             &0i128,
         );
     });
     e.as_contract(&reward_token, || {
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(admin.clone()),
+            &TokenDataKey::Balance(admin.clone()),
             &1000000i128,
         );
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(contract_id.clone()),
+            &TokenDataKey::Balance(contract_id.clone()),
             &0i128,
         );
     });
@@ -545,7 +554,7 @@ fn test_asset_reward_claiming() {
     let reward_token = Address::generate(&e);
     let vesting_period = 0u64; // No vesting for this test
 
-    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period, &0, &soroban_sdk::Vec::new(&e));
 
     let asset1 = Address::generate(&e);
     let user = Address::generate(&e);
@@ -556,21 +565,21 @@ fn test_asset_reward_claiming() {
     // Mock token balances
     e.as_contract(&asset1, || {
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(user.clone()),
+            &TokenDataKey::Balance(user.clone()),
             &1000i128,
         );
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(contract_id.clone()),
+            &TokenDataKey::Balance(contract_id.clone()),
             &0i128,
         );
     });
     e.as_contract(&reward_token, || {
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(admin.clone()),
+            &TokenDataKey::Balance(admin.clone()),
             &1000000i128,
         );
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(contract_id.clone()),
+            &TokenDataKey::Balance(contract_id.clone()),
             &0i128,
         );
     });
@@ -604,7 +613,7 @@ fn test_independent_asset_tracking() {
     let reward_token = Address::generate(&e);
     let vesting_period = 0u64;
 
-    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period, &0, &soroban_sdk::Vec::new(&e));
 
     let asset1 = Address::generate(&e);
     let asset2 = Address::generate(&e);
@@ -617,31 +626,31 @@ fn test_independent_asset_tracking() {
     // Mock token balances
     e.as_contract(&asset1, || {
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(user.clone()),
+            &TokenDataKey::Balance(user.clone()),
             &10000i128,
         );
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(contract_id.clone()),
+            &TokenDataKey::Balance(contract_id.clone()),
             &0i128,
         );
     });
     e.as_contract(&asset2, || {
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(user.clone()),
+            &TokenDataKey::Balance(user.clone()),
             &10000i128,
         );
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(contract_id.clone()),
+            &TokenDataKey::Balance(contract_id.clone()),
             &0i128,
         );
     });
     e.as_contract(&reward_token, || {
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(admin.clone()),
+            &TokenDataKey::Balance(admin.clone()),
             &2000000i128,
         );
         e.storage().instance().set(
-            &soroban_sdk::token::DataKey::Balance(contract_id.clone()),
+            &TokenDataKey::Balance(contract_id.clone()),
             &0i128,
         );
     });
@@ -684,7 +693,7 @@ fn test_unsupported_asset_fails() {
     let reward_token = Address::generate(&e);
     let vesting_period = 86400u64;
 
-    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period);
+    client.initialize(&admin, &deposit_token, &reward_token, &vesting_period, &0, &soroban_sdk::Vec::new(&e));
 
     let unsupported_asset = Address::generate(&e);
     let user = Address::generate(&e);
@@ -721,7 +730,7 @@ fn test_event_topic_standard() {
         max_entry_ttl: 6312000,
     });
 
-    let contract_id = e.register_contract(None, VaultContract {});
+    let contract_id = e.register_contract(None, VaultContract);
     let client = VaultContractClient::new(&e, &contract_id);
 
     let admin = Address::generate(&e);
@@ -742,14 +751,14 @@ fn test_event_topic_standard() {
     // Verify initialize event topics
     let events_snapshot = e.events().all();
     let last = events_snapshot.last().unwrap();
-    assert_eq!(last.0.len(), 2, "Initialize must have 2 topics");
+    assert_eq!(last.1.len(), 2, "Initialize must have 2 topics");
     assert_eq!(
-        last.0.get(0).unwrap(),
-        soroban_sdk::xdr::ToXdr::to_xdr(&axionvera_events::PROTOCOL),
+        last.1.get(0).unwrap().clone().to_xdr(&e),
+        axionvera_events::PROTOCOL.to_xdr(&e),
     );
     assert_eq!(
-        last.0.get(1).unwrap(),
-        soroban_sdk::xdr::ToXdr::to_xdr(&axionvera_events::ACT_INIT),
+        last.1.get(1).unwrap().clone().to_xdr(&e),
+        axionvera_events::ACT_INIT.to_xdr(&e),
     );
 }
 
@@ -769,7 +778,7 @@ fn test_deposit_event_indexing() {
         max_entry_ttl: 6312000,
     });
 
-    let contract_id = e.register_contract(None, VaultContract {});
+    let contract_id = e.register_contract(None, VaultContract);
     let client = VaultContractClient::new(&e, &contract_id);
 
     let admin = Address::generate(&e);
@@ -791,13 +800,13 @@ fn test_deposit_event_indexing() {
     e.as_contract(&deposit_token, || {
         e.storage()
             .instance()
-            .set(&soroban_sdk::token::DataKey::Admin, &admin);
+            .set(&TokenDataKey::Admin, &admin);
         e.storage()
             .instance()
-            .set(&soroban_sdk::token::DataKey::Balance(user.clone()), &1000i128);
+            .set(&TokenDataKey::Balance(user.clone()), &1000i128);
         e.storage()
             .instance()
-            .set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+            .set(&TokenDataKey::Balance(contract_id.clone()), &0i128);
     });
 
     client.deposit(&user, &100i128);
@@ -805,7 +814,7 @@ fn test_deposit_event_indexing() {
     // Verify event has two topics
     let events = e.events().all();
     let deposit_event = events.get(events.len() - 1).unwrap();
-    assert_eq!(deposit_event.0.len(), 2, "Deposit must have 2 topics");
+    assert_eq!(deposit_event.1.len(), 2, "Deposit must have 2 topics");
 
     // Verify on-chain indexing
     e.as_contract(&contract_id, || {
@@ -838,7 +847,7 @@ fn test_pause_unpause_events() {
         max_entry_ttl: 6312000,
     });
 
-    let contract_id = e.register_contract(None, VaultContract {});
+    let contract_id = e.register_contract(None, VaultContract);
     let client = VaultContractClient::new(&e, &contract_id);
 
     let admin = Address::generate(&e);
@@ -866,19 +875,19 @@ fn test_pause_unpause_events() {
     );
 
     let pause_event = pause_events.get(new_count - 1).unwrap();
-    assert_eq!(pause_event.0.len(), 2, "Pause must have 2 topics");
+    assert_eq!(pause_event.1.len(), 2, "Pause must have 2 topics");
     assert_eq!(
-        pause_event.0.get(1).unwrap(),
-        soroban_sdk::xdr::ToXdr::to_xdr(&axionvera_events::ACT_PAUSE),
+        pause_event.1.get(1).unwrap().clone().to_xdr(&e),
+        axionvera_events::ACT_PAUSE.to_xdr(&e),
     );
 
     client.unpause_contract();
     let all_events = e.events().all();
     let unpause_event = all_events.get(all_events.len() - 1).unwrap();
-    assert_eq!(unpause_event.0.len(), 2, "Unpause must have 2 topics");
+    assert_eq!(unpause_event.1.len(), 2, "Unpause must have 2 topics");
     assert_eq!(
-        unpause_event.0.get(1).unwrap(),
-        soroban_sdk::xdr::ToXdr::to_xdr(&axionvera_events::ACT_UNPAUSE),
+        unpause_event.1.get(1).unwrap().clone().to_xdr(&e),
+        axionvera_events::ACT_UNPAUSE.to_xdr(&e),
     );
 }
 
@@ -898,7 +907,7 @@ fn test_event_version_field() {
         max_entry_ttl: 6312000,
     });
 
-    let contract_id = e.register_contract(None, VaultContract {});
+    let contract_id = e.register_contract(None, VaultContract);
     let client = VaultContractClient::new(&e, &contract_id);
 
     let admin = Address::generate(&e);
@@ -920,24 +929,24 @@ fn test_event_version_field() {
     e.as_contract(&deposit_token, || {
         e.storage()
             .instance()
-            .set(&soroban_sdk::token::DataKey::Admin, &admin);
+            .set(&TokenDataKey::Admin, &admin);
         e.storage()
             .instance()
-            .set(&soroban_sdk::token::DataKey::Balance(user.clone()), &1000i128);
+            .set(&TokenDataKey::Balance(user.clone()), &1000i128);
         e.storage()
             .instance()
-            .set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+            .set(&TokenDataKey::Balance(contract_id.clone()), &0i128);
     });
     e.as_contract(&reward_token, || {
         e.storage()
             .instance()
-            .set(&soroban_sdk::token::DataKey::Admin, &admin);
+            .set(&TokenDataKey::Admin, &admin);
         e.storage()
             .instance()
-            .set(&soroban_sdk::token::DataKey::Balance(admin.clone()), &200000i128);
+            .set(&TokenDataKey::Balance(admin.clone()), &200000i128);
         e.storage()
             .instance()
-            .set(&soroban_sdk::token::DataKey::Balance(contract_id.clone()), &0i128);
+            .set(&TokenDataKey::Balance(contract_id.clone()), &0i128);
     });
 
     // Verify that the event_version constant is 1
