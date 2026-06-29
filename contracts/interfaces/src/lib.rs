@@ -21,6 +21,14 @@ pub trait VaultEventEmitter {
     fn emit_upgrade(e: &Env, admin: Address, new_wasm_hash: BytesN<32>);
     fn emit_pause(e: &Env, admin: Address);
     fn emit_unpause(e: &Env, admin: Address);
+    fn emit_delegation_granted(
+        e: &Env,
+        delegator: Address,
+        delegatee: Address,
+        operation: Symbol,
+        expiration: u64,
+    );
+    fn emit_delegation_revoked(e: &Env, delegator: Address, delegatee: Address, operation: Symbol);
     fn emit_asset_added(e: &Env, asset: Address);
     fn emit_asset_deposit(e: &Env, user: Address, asset: Address, amount: i128);
     fn emit_asset_withdraw(
