@@ -11,6 +11,7 @@ members = [
   "contracts/integrations",
   "contracts/orchestrator",
   "contracts/rewards",
+  "contracts/context",
   "network-node",
   "tests/security",
 ]

@@ -253,6 +253,66 @@ pub fn ledger_timestamp(e: &Env) -> u64 {
 // Config contract — protocol identifier and action symbols
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Orchestrator — protocol identifier and action symbols
+// ---------------------------------------------------------------------------
+
+/// Protocol identifier used as Topic 1 for all orchestrator events.
+pub const PROTOCOL_ORCH: Symbol = symbol_short!("AxOrch");
+
+pub const ACT_ORCH_VALIDATED: Symbol = symbol_short!("orch_val");
+pub const ACT_ORCH_EXECUTED: Symbol = symbol_short!("orch_exe");
+pub const ACT_ORCH_ROLLBACK: Symbol = symbol_short!("orch_rlb");
+pub const ACT_ORCH_FAILED: Symbol = symbol_short!("orch_fal");
+
+// ---------------------------------------------------------------------------
+// Orchestrator event payload structs
+// ---------------------------------------------------------------------------
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrchestrationValidatedEvent {
+    pub event_version: u32,
+    pub plan_id: BytesN<32>,
+    pub caller: Address,
+    pub operation_count: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrchestrationExecutedEvent {
+    pub event_version: u32,
+    pub plan_id: BytesN<32>,
+    pub caller: Address,
+    pub executed_count: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrchestrationRollbackEvent {
+    pub event_version: u32,
+    pub plan_id: BytesN<32>,
+    pub operation_id: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrchestrationFailedEvent {
+    pub event_version: u32,
+    pub plan_id: BytesN<32>,
+    pub caller: Address,
+    pub failed_operation: u32,
+    pub rollback_count: u32,
+    pub timestamp: u64,
+}
+
+// ---------------------------------------------------------------------------
+// Config contract — protocol identifier and action symbols
+// ---------------------------------------------------------------------------
+
 /// Protocol identifier used as Topic 1 for all config contract events.
 pub const PROTOCOL_CONFIG: Symbol = symbol_short!("AxCfg");
 
