@@ -1,17 +1,17 @@
 use axionvera_accounting::{
-    AccountingCategory, AccountingEntry, AccountingOperation, AccountingReport, OperationResources,
-    ResourceTotals, record_operation,
+    AccountingCategory, AccountingEntry, AccountingOperation, OperationResources,
+    record_operation,
 };
-use axionvera_state::{
-    GovernanceState, RewardState, StakingState, TreasuryState, VaultState,
-};
+use axionvera_state::{RewardState, StakingState, TreasuryState, VaultState};
 use axionvera_storage::{
-    get_reward_state, get_staking_state, get_treasury_state, get_vault_state, set_reward_state,
-    set_staking_state, set_treasury_state, set_vault_state,
+    set_reward_state, set_staking_state, set_treasury_state, set_vault_state,
 };
 use axionvera_validator::*;
-use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{testutils::Ledger, Address, Env};
+use soroban_sdk::{
+    symbol_short,
+    testutils::{Address as _, Ledger},
+    Address, Env,
+};
 
 // -----------------------------------------------------------------------
 // Harness contract for storage-backed tests
@@ -36,7 +36,8 @@ fn harness(e: &Env) {
 
 #[test]
 fn consistency_default_states_pass() {
-    let results = validate_consistency_rules(
+    let e = Env::default();
+    let results = validate_consistency_rules(&e,
         VaultState::Uninitialized,
         StakingState::Uninitialized,
         RewardState::Idle,
@@ -52,7 +53,8 @@ fn consistency_default_states_pass() {
 
 #[test]
 fn consistency_active_vault_with_staking_fails() {
-    let results = validate_consistency_rules(
+    let e = Env::default();
+    let results = validate_consistency_rules(&e,
         VaultState::Paused,
         StakingState::Active,
         RewardState::Idle,
@@ -67,7 +69,8 @@ fn consistency_active_vault_with_staking_fails() {
 
 #[test]
 fn consistency_terminated_vault_with_normal_treasury_fails() {
-    let results = validate_consistency_rules(
+    let e = Env::default();
+    let results = validate_consistency_rules(&e,
         VaultState::Terminated,
         StakingState::Uninitialized,
         RewardState::Idle,
@@ -82,7 +85,8 @@ fn consistency_terminated_vault_with_normal_treasury_fails() {
 
 #[test]
 fn consistency_detects_multiple_violations() {
-    let results = validate_consistency_rules(
+    let e = Env::default();
+    let results = validate_consistency_rules(&e,
         VaultState::Paused,
         StakingState::Active,
         RewardState::Distributing,
@@ -176,12 +180,12 @@ fn report_has_all_rule_names() {
         let expected = [
             symbol_short!("vault_stk"),
             symbol_short!("vault_trs"),
-            symbol_short!("reward_vlt"),
+            symbol_short!("rwd_vault"),
             symbol_short!("vault_rwd"),
             symbol_short!("treas_vlt"),
             symbol_short!("rsrc_inv"),
             symbol_short!("acct_cons"),
-            symbol_short!("evt_log_inv"),
+            symbol_short!("evt_log"),
         ];
         for name in expected {
             let found = report

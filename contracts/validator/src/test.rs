@@ -2,6 +2,7 @@
 
 use crate::*;
 use soroban_sdk::{testutils::Address as _, Address, Env};
+use axionvera_storage::{set_vault_state, set_staking_state, set_reward_state, set_treasury_state};
 
 // -----------------------------------------------------------------------
 // Pure-logic consistency rule tests (no contract env needed beyond default)
@@ -99,10 +100,10 @@ fn detect_mixed_inconsistencies() {
         VaultState::Terminated, StakingState::Active,
         RewardState::Accruing, TreasuryState::Normal,
     );
-    let mut pass = 0; let mut fail = 0;
+    let mut fail = 0;
     for i in 0..results.len() {
         match results.get(i).unwrap().status {
-            ValidationStatus::Passed => pass += 1,
+            ValidationStatus::Passed => (),
             ValidationStatus::Failed => fail += 1,
             ValidationStatus::Warning => (),
         }
@@ -122,10 +123,8 @@ impl ValidatorHarness {
     pub fn noop() {}
 }
 
-fn setup_env_with_states(
-    vault: VaultState, staking: StakingState,
-    reward: RewardState, treasury: TreasuryState,
-) -> Env {
+fn with_env<F: FnOnce(&Env)>(vault: VaultState, staking: StakingState,
+    reward: RewardState, treasury: TreasuryState, f: F) {
     let e = Env::default();
     let caller = Address::generate(&e);
     let id = e.register(ValidatorHarness, ());
@@ -134,56 +133,52 @@ fn setup_env_with_states(
         set_staking_state(&e, staking, caller.clone()).ok();
         set_reward_state(&e, reward, caller.clone()).ok();
         set_treasury_state(&e, treasury, caller).ok();
+        f(&e);
     });
-    e
 }
 
 #[test]
 fn storage_backed_rules_on_default_states() {
-    let e = setup_env_with_states(
+    with_env(
         VaultState::Uninitialized, StakingState::Uninitialized,
         RewardState::Idle, TreasuryState::Normal,
+        |e| {
+            let report = generate_report(e);
+            assert_eq!(report.overall, ValidationStatus::Passed);
+            assert!(report.passed >= report.rules.len() - report.warnings);
+        },
     );
-    let id = e.register(ValidatorHarness, ());
-    e.as_contract(&id, || {
-        let report = generate_report(&e);
-        assert_eq!(report.overall, ValidationStatus::Passed);
-        assert!(report.passed >= report.rules.len() - report.warnings);
-    });
 }
 
 #[test]
 fn report_detects_inconsistencies() {
-    let e = setup_env_with_states(
+    with_env(
         VaultState::Terminated, StakingState::Active,
         RewardState::Accruing, TreasuryState::Normal,
+        |e| {
+            let report = generate_report(e);
+            assert_eq!(report.overall, ValidationStatus::Failed);
+            assert!(report.failed > 0);
+        },
     );
-    let id = e.register(ValidatorHarness, ());
-    e.as_contract(&id, || {
-        let report = generate_report(&e);
-        assert_eq!(report.overall, ValidationStatus::Failed);
-        assert!(report.failed > 0);
-    });
 }
 
 #[test]
 fn rule_names_are_present_in_report() {
-    let e = setup_env_with_states(
+    with_env(
         VaultState::Active, StakingState::Active,
         RewardState::Accruing, TreasuryState::Normal,
-    );
-    let id = e.register(ValidatorHarness, ());
-    e.as_contract(&id, || {
-        let report = generate_report(&e);
-        let expected = [
+        |e| {
+            let report = generate_report(e);
+            let expected = [
             symbol_short!("vault_stk"),
             symbol_short!("vault_trs"),
-            symbol_short!("reward_vlt"),
+            symbol_short!("rwd_vault"),
             symbol_short!("vault_rwd"),
             symbol_short!("treas_vlt"),
             symbol_short!("rsrc_inv"),
             symbol_short!("acct_cons"),
-            symbol_short!("evt_log_inv"),
+            symbol_short!("evt_log"),
         ];
         let mut found_count = 0u32;
         for ei in 0..expected.len() {

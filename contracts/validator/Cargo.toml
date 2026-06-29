@@ -16,3 +16,6 @@ axionvera-core = { path = "../core" }
 axionvera-resources = { path = "../resources" }
 axionvera-events = { path = "../events" }
 axionvera-accounting = { path = "../accounting" }
+
+[dev-dependencies]
+soroban-sdk = { version = "22.0.0", features = ["testutils"] }
