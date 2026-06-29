@@ -28,10 +28,9 @@ pub const ACT_ASSET_DEPOSIT: Symbol = symbol_short!("asset_dep");
 pub const ACT_ASSET_WITHDRAW: Symbol = symbol_short!("asset_wd");
 pub const ACT_ASSET_DISTRIBUTE: Symbol = symbol_short!("ast_dist");
 pub const ACT_ASSET_CLAIM: Symbol = symbol_short!("asset_clm");
-pub const ACT_ORCH_VALIDATED: Symbol = symbol_short!("orc_val");
-pub const ACT_ORCH_EXECUTED: Symbol = symbol_short!("orc_exec");
-pub const ACT_ORCH_ROLLBACK: Symbol = symbol_short!("orc_rb");
-pub const ACT_ORCH_FAILED: Symbol = symbol_short!("orc_fail");
+pub const ACT_DELEGATE: Symbol = symbol_short!("delegate");
+pub const ACT_REVOKE_DELEGATION: Symbol = symbol_short!("rvk_dlg");
+pub const ACT_DELEGATED_ACTION: Symbol = symbol_short!("deleg_act");
 
 // ---------------------------------------------------------------------------
 // Storage keys used by the indexing layer
@@ -213,41 +212,32 @@ pub struct UnlockEvent {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OrchestrationValidatedEvent {
+pub struct DelegateEvent {
     pub event_version: u32,
-    pub plan_id: BytesN<32>,
-    pub caller: Address,
-    pub operation_count: u32,
+    pub delegator: Address,
+    pub operator: Address,
+    pub permissions: u32,
+    pub expires_at: u64,
     pub timestamp: u64,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OrchestrationExecutedEvent {
+pub struct RevokeDelegationEvent {
     pub event_version: u32,
-    pub plan_id: BytesN<32>,
-    pub caller: Address,
-    pub executed_count: u32,
+    pub delegator: Address,
+    pub operator: Address,
     pub timestamp: u64,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OrchestrationRollbackEvent {
+pub struct DelegatedActionEvent {
     pub event_version: u32,
-    pub plan_id: BytesN<32>,
-    pub operation_id: u32,
-    pub timestamp: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OrchestrationFailedEvent {
-    pub event_version: u32,
-    pub plan_id: BytesN<32>,
-    pub caller: Address,
-    pub failed_operation: u32,
-    pub rollback_count: u32,
+    pub delegator: Address,
+    pub operator: Address,
+    pub permission: u32,
+    pub action: Symbol,
     pub timestamp: u64,
 }
 
