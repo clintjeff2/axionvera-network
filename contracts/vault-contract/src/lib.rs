@@ -1,5 +1,16 @@
 #![no_std]
 
+pub mod cross_contract;
+pub mod errors;
+mod events;
+mod storage;
+#[cfg(test)]
+mod test;
+
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env};
+
+use crate::cross_contract::CrossContractClient;
+use crate::errors::{AuthorizationError, BalanceError, StateError, ValidationError, VaultError};
 mod access;
 pub mod cross_contract;
 pub mod errors;
@@ -7,8 +18,6 @@ pub mod events;
 pub mod storage;
 #[cfg(test)]
 mod test;
-
-
 
 use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env};
 
@@ -101,8 +110,6 @@ impl VaultContract {
         deposit_token: Address,
         reward_token: Address,
         vesting_period: u64,
-        target_deposits: i128,
-        utilization_multipliers: soroban_sdk::Vec<storage::MultiplierPoint>,
     ) -> Result<(), VaultError> {
         storage::require_not_paused(&e)?;
         if storage::is_initialized(&e) {
@@ -110,10 +117,11 @@ impl VaultContract {
         }
 
         validate_distinct_token_addresses(&deposit_token, &reward_token)?;
-        validate_utilization_multipliers(&utilization_multipliers)?;
 
         access::require_actor(&admin)?;
 
+        let target_deposits = 0_i128;
+        let utilization_multipliers = soroban_sdk::Vec::new(&e);
         storage::initialize_state(
             &e,
             &admin,
@@ -206,7 +214,6 @@ impl VaultContract {
             )?;
 
             let (state, _position) = storage::store_deposit(&e, &from, amount)?;
-            Self::update_total_deposits(e.clone(), amount);
             account_operation(
                 &e,
                 accounting::AccountingCategory::Vault,
@@ -223,7 +230,12 @@ impl VaultContract {
         })
     }
 
-    pub fn authorize_delegate(e: Env, owner: Address, delegate: Address, permissions: u32) -> Result<(), VaultError> {
+    pub fn authorize_delegate(
+        e: Env,
+        owner: Address,
+        delegate: Address,
+        permissions: u32,
+    ) -> Result<(), VaultError> {
         storage::require_initialized(&e)?;
         owner.require_auth();
         if permissions == 0 {
@@ -244,7 +256,12 @@ impl VaultContract {
         Ok(())
     }
 
-    pub fn deposit_as_delegate(e: Env, owner: Address, delegate: Address, amount: i128) -> Result<(), VaultError> {
+    pub fn deposit_as_delegate(
+        e: Env,
+        owner: Address,
+        delegate: Address,
+        amount: i128,
+    ) -> Result<(), VaultError> {
         storage::require_not_paused(&e)?;
         storage::require_initialized(&e)?;
         validate_positive_amount(amount)?;
@@ -267,7 +284,12 @@ impl VaultContract {
             let (_state, _position) = storage::store_deposit(&e, &owner, amount)?;
             Self::update_total_deposits(e.clone(), amount);
             events::emit_deposit(&e, owner.clone(), amount);
-            events::emit_delegate_action(&e, owner.clone(), delegate.clone(), symbol_short!("deposit"));
+            events::emit_delegate_action(
+                &e,
+                owner.clone(),
+                delegate.clone(),
+                symbol_short!("deposit"),
+            );
             Ok(())
         })
     }
@@ -282,6 +304,7 @@ impl VaultContract {
 
         with_non_reentrant(&e, || {
             let (state, position) = storage::store_withdraw(&e, &to, amount)?;
+            let deposit_token = state.deposit_token.clone();
 
             account_operation(
                 &e,
@@ -331,7 +354,12 @@ impl VaultContract {
             Self::update_total_deposits(e.clone(), -amount);
 
             events::emit_withdraw(&e, owner.clone(), amount, position.balance);
-            events::emit_delegate_action(&e, owner.clone(), delegate.clone(), symbol_short!("withdraw"));
+            events::emit_delegate_action(
+                &e,
+                owner.clone(),
+                delegate.clone(),
+                symbol_short!("withdraw"),
+            );
 
             CrossContractClient::token_transfer(
                 &e,
@@ -492,7 +520,9 @@ impl VaultContract {
                 amt,
                 accounting::OperationResources::new(5, 3, 2, 1),
             )?;
-            events::emit_claim_rewards(&e, user, amt);
+            events::emit_claim_rewards(&e, user.clone(), amt);
+            let remaining = storage::pending_user_rewards_view(&e, &user)?;
+            events::emit_vesting_claimed(&e, user, None, amt, remaining);
             Ok(amt)
         })
     }
@@ -530,7 +560,12 @@ impl VaultContract {
             )?;
 
             events::emit_claim_rewards(&e, owner.clone(), amt);
-            events::emit_delegate_action(&e, owner.clone(), delegate.clone(), symbol_short!("claim"));
+            events::emit_delegate_action(
+                &e,
+                owner.clone(),
+                delegate.clone(),
+                symbol_short!("claim"),
+            );
             Ok(amt)
         })
     }
@@ -555,7 +590,11 @@ impl VaultContract {
         storage::get_reward_index(&e)
     }
 
-    pub fn delegate_permissions(e: Env, owner: Address, delegate: Address) -> Result<u32, VaultError> {
+    pub fn delegate_permissions(
+        e: Env,
+        owner: Address,
+        delegate: Address,
+    ) -> Result<u32, VaultError> {
         storage::get_delegate_permissions(&e, &owner, &delegate)
     }
 
@@ -585,6 +624,34 @@ impl VaultContract {
 
     pub fn reward_token(e: Env) -> Result<Address, VaultError> {
         storage::get_reward_token(&e)
+    }
+
+    pub fn weighted_total_deposits(e: Env) -> Result<i128, VaultError> {
+        storage::get_weighted_total_deposits(&e)
+    }
+
+    pub fn lock_duration_models(
+        e: Env,
+    ) -> Result<soroban_sdk::Vec<storage::LockDurationModel>, VaultError> {
+        storage::require_initialized(&e)?;
+        Ok(storage::get_lock_duration_models(&e))
+    }
+
+    pub fn set_lock_duration_models(
+        e: Env,
+        admin: Address,
+        models: soroban_sdk::Vec<storage::LockDurationModel>,
+    ) -> Result<(), VaultError> {
+        storage::require_initialized(&e)?;
+        let stored_admin = storage::get_admin(&e)?;
+        if admin != stored_admin {
+            return Err(AuthorizationError::Unauthorized.into());
+        }
+        admin.require_auth();
+
+        storage::validate_lock_duration_models(&models)?;
+        storage::set_lock_duration_models(&e, &models);
+        Ok(())
     }
 
     pub fn pause_contract(e: Env) -> Result<(), VaultError> {
@@ -1014,7 +1081,11 @@ impl VaultContract {
     }
 
     /// Revoke a previously granted delegation.
-    pub fn revoke_delegation(e: Env, delegator: Address, operator: Address) -> Result<(), VaultError> {
+    pub fn revoke_delegation(
+        e: Env,
+        delegator: Address,
+        operator: Address,
+    ) -> Result<(), VaultError> {
         storage::require_initialized(&e)?;
         delegator.require_auth();
 
@@ -1024,7 +1095,11 @@ impl VaultContract {
     }
 
     /// Query a specific delegation entry.
-    pub fn get_delegation(e: Env, delegator: Address, operator: Address) -> Option<storage::Delegation> {
+    pub fn get_delegation(
+        e: Env,
+        delegator: Address,
+        operator: Address,
+    ) -> Option<storage::Delegation> {
         storage::get_delegation(&e, &delegator, &operator)
     }
 
@@ -1265,6 +1340,12 @@ fn validate_utilization_multipliers(
 
     let mut last_util_bps = 0;
     for point in multipliers.iter() {
+        if point.utilization_bps > 10_000
+            || point.multiplier_bps == 0
+            || point.multiplier_bps > 100_000
+        {
+            return Err(ValidationError::InvalidUtilizationParameters.into());
+        }
         if point.utilization_bps < last_util_bps {
             // The list must be sorted by utilization_bps in ascending order.
             return Err(ValidationError::InvalidUtilizationParameters.into());
