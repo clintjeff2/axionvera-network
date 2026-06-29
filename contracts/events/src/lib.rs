@@ -579,3 +579,45 @@ pub struct PolicyUnpausedEvent {
     pub admin: Address,
     pub timestamp: u64,
 }
+
+// ---------------------------------------------------------------------------
+// Replay Engine — protocol identifier and action symbols
+// ---------------------------------------------------------------------------
+
+/// Protocol identifier used as Topic 1 for all replay engine events.
+pub const PROTOCOL_REPLAY: Symbol = symbol_short!("AxReplay");
+
+pub const ACT_REPLAY_INIT: Symbol = symbol_short!("rep_init");
+pub const ACT_REPLAY_START: Symbol = symbol_short!("rep_start");
+pub const ACT_REPLAY_COMPLETE: Symbol = symbol_short!("rep_complete");
+
+// ---------------------------------------------------------------------------
+// Replay Engine event payload structs
+// ---------------------------------------------------------------------------
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayInitializedEvent {
+    pub event_version: u32,
+    pub admin: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayStartedEvent {
+    pub event_version: u32,
+    pub run_id: BytesN<32>,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayCompletedEvent {
+    pub event_version: u32,
+    pub run_id: BytesN<32>,
+    pub success: bool,
+    pub total_events: u64,
+    pub successful_events: u64,
+    pub timestamp: u64,
+}
