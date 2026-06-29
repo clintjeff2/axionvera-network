@@ -575,10 +575,7 @@ pub fn get_delegate_permissions(
             bump_instance_ttl(e);
             Ok(auth.permissions)
         }
-        _ => {
-            bump_instance_ttl(e);
-            Ok(0)
-        }
+        _ => Ok(0),
     }
 }
 

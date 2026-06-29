@@ -224,6 +224,7 @@ impl VaultContract {
 
         with_non_reentrant(&e, || {
             let (state, position) = storage::store_withdraw(&e, &to, amount)?;
+            let deposit_token = state.deposit_token.clone();
 
             account_operation(
                 &e,
@@ -1220,6 +1221,12 @@ fn validate_utilization_multipliers(
 
     let mut last_util_bps = 0;
     for point in multipliers.iter() {
+        if point.utilization_bps > 10_000
+            || point.multiplier_bps == 0
+            || point.multiplier_bps > 100_000
+        {
+            return Err(ValidationError::InvalidUtilizationParameters.into());
+        }
         if point.utilization_bps < last_util_bps {
             // The list must be sorted by utilization_bps in ascending order.
             return Err(ValidationError::InvalidUtilizationParameters.into());
