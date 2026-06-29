@@ -32,6 +32,18 @@ pub const ACT_DELEGATE: Symbol = symbol_short!("delegate");
 pub const ACT_REVOKE_DELEGATION: Symbol = symbol_short!("rvk_dlg");
 pub const ACT_DELEGATED_ACTION: Symbol = symbol_short!("deleg_act");
 
+pub const ACT_PIPE_START: Symbol = symbol_short!("pipe_str");
+pub const ACT_PIPE_COMPL: Symbol = symbol_short!("pipe_com");
+pub const ACT_PIPE_FAIL: Symbol = symbol_short!("pipe_fai");
+pub const ACT_STAGE_START: Symbol = symbol_short!("stg_str");
+pub const ACT_STAGE_COMPL: Symbol = symbol_short!("stg_com");
+pub const ACT_STAGE_FAIL: Symbol = symbol_short!("stg_fai");
+
+pub const ACT_ORCH_VALIDATED: Symbol = symbol_short!("orch_val");
+pub const ACT_ORCH_EXECUTED: Symbol = symbol_short!("orch_exe");
+pub const ACT_ORCH_ROLLBACK: Symbol = symbol_short!("orch_rbk");
+pub const ACT_ORCH_FAILED: Symbol = symbol_short!("orch_fai");
+
 // ---------------------------------------------------------------------------
 // Storage keys used by the indexing layer
 // ---------------------------------------------------------------------------
@@ -238,6 +250,90 @@ pub struct DelegatedActionEvent {
     pub operator: Address,
     pub permission: u32,
     pub action: Symbol,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PipelineStartedEvent {
+    pub event_version: u32,
+    pub pipeline_id: Symbol,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PipelineCompletedEvent {
+    pub event_version: u32,
+    pub pipeline_id: Symbol,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PipelineFailedEvent {
+    pub event_version: u32,
+    pub pipeline_id: Symbol,
+    pub failed_stage: Symbol,
+    pub error_code: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StageStartedEvent {
+    pub event_version: u32,
+    pub pipeline_id: Symbol,
+    pub stage_id: Symbol,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StageCompletedEvent {
+    pub event_version: u32,
+    pub pipeline_id: Symbol,
+    pub stage_id: Symbol,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrchestrationValidatedEvent {
+    pub event_version: u32,
+    pub plan_id: BytesN<32>,
+    pub caller: Address,
+    pub operation_count: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrchestrationExecutedEvent {
+    pub event_version: u32,
+    pub plan_id: BytesN<32>,
+    pub caller: Address,
+    pub executed_count: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrchestrationRollbackEvent {
+    pub event_version: u32,
+    pub plan_id: BytesN<32>,
+    pub operation_id: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrchestrationFailedEvent {
+    pub event_version: u32,
+    pub plan_id: BytesN<32>,
+    pub caller: Address,
+    pub failed_operation: u32,
+    pub rollback_count: u32,
     pub timestamp: u64,
 }
 
