@@ -19,6 +19,7 @@ const EVENT_ACTIONS = {
   ASSET_WITHDRAW: 'asset_wd',
   ASSET_DISTRIBUTE: 'ast_dist',
   ASSET_CLAIM: 'asset_clm',
+  ACCOUNTING: 'account',
 } as const;
 
 type EventAction = (typeof EVENT_ACTIONS)[keyof typeof EVENT_ACTIONS];
@@ -94,6 +95,11 @@ describe('Event Standards', () => {
       expect(actions).toContain('asset_wd');
       expect(actions).toContain('ast_dist');
       expect(actions).toContain('asset_clm');
+    });
+
+    it('should include accounting operation events', () => {
+      const actions = Object.values(EVENT_ACTIONS);
+      expect(actions).toContain('account');
     });
 
     it('should have at least 16 event types', () => {
