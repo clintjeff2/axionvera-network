@@ -14,6 +14,7 @@ members = [
   "contracts/resources",
   "contracts/state",
   "contracts/storage",
+  "contracts/validator",
   "network-node",
   "tests/security", "contracts/admin",
   "tests/auth",

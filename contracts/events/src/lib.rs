@@ -1098,3 +1098,28 @@ pub struct ResourceRetiredEvent {
     pub caller: Address,
     pub timestamp: u64,
 }
+
+// ---------------------------------------------------------------------------
+// Accounting — action symbol and event payload
+// ---------------------------------------------------------------------------
+
+pub const ACT_ACCOUNTING: Symbol = symbol_short!("acct");
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccountingEvent {
+    pub event_version: u32,
+    pub category: Symbol,
+    pub operation: Symbol,
+    pub actor: Option<Address>,
+    pub asset: Option<Address>,
+    pub amount_in: i128,
+    pub amount_out: i128,
+    pub amount_processed: i128,
+    pub storage_reads: u32,
+    pub storage_writes: u32,
+    pub events_emitted: u32,
+    pub token_transfers: u32,
+    pub timestamp: u64,
+    pub ledger: u32,
+}
